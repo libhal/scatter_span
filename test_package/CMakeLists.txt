@@ -12,10 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 4.0)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_COLOR_DIAGNOSTICS ON)
+
 project(test_package LANGUAGES CXX)
 
-find_package(scatter-span CONFIG REQUIRED)
+if(NOT CMAKE_GENERATOR MATCHES "Ninja|Visual Studio")
+    message(FATAL_ERROR "C++20 modules require Ninja or Visual Studio generator")
+endif()
 
-add_executable(test_package main.cpp)
-target_link_libraries(test_package PRIVATE scatter-span::scatter-span)
+find_package(scatter-span REQUIRED CONFIG)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    string(APPEND CMAKE_CXX_FLAGS " -Qunused-arguments")
+endif()
+
+add_executable(${PROJECT_NAME} main.cpp)
+target_include_directories(${PROJECT_NAME} PUBLIC .)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
+target_compile_options(${PROJECT_NAME} PRIVATE -fno-rtti)
+target_link_libraries(${PROJECT_NAME} PRIVATE scatter-span::scatter-span)
+
+if(NOT CMAKE_CROSSCOMPILING)
+    target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+    target_link_options(${PROJECT_NAME} PRIVATE -g -fsanitize=address)
+endif()
+
+add_custom_target(copy_compile_commands ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_BINARY_DIR}/compile_commands.json
+        ${CMAKE_SOURCE_DIR}/compile_commands.json
+    DEPENDS ${CMAKE_BINARY_DIR}/compile_commands.json)

@@ -12,23 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 4.0)
 
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 
 project(scatter-span LANGUAGES CXX)
 
-libhal_test_and_make_library(
-  LIBRARY_NAME scatter-span
+find_package(LibhalCMakeUtil REQUIRED)
 
-  SOURCES
-  src/scatter_span.cpp
+libhal_project_init()
+libhal_add_library(scatter-span
+    MODULES
+        modules/scatter_span.cppm
+)
 
-  TEST_SOURCES
-  tests/scatter_span.test.cpp
-  tests/main.test.cpp
-
-  PACKAGES
-
-  LINK_LIBRARIES
+libhal_apply_compile_options(scatter-span)
+libhal_install_library(scatter-span NAMESPACE scatter-span)
+libhal_add_tests(scatter-span
+    TEST_NAMES
+        scatter_span
 )
