@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <scatter_span/scatter_span.hpp>
+import scatter_span;
 
 int main()
 {

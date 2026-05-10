@@ -13,9 +13,15 @@
 # limitations under the License.
 
 from conan import ConanFile
+from conan.tools.cmake import CMake, cmake_layout, CMakeToolchain, CMakeDeps
+from conan.tools.files import copy
+from conan.errors import ConanInvalidConfiguration
+from conan.tools.build import check_min_cppstd
+from conan.tools.scm import Version
+from pathlib import Path
 
 
-required_conan_version = ">=2.0.14"
+required_conan_version = ">=2.2.0"
 
 
 class scatter_span_conan(ConanFile):
@@ -25,18 +31,85 @@ class scatter_span_conan(ConanFile):
     description = ("A data structure library for housing arrays of unowned data.")
     topics = ("span", "scatter", "data-structures", "non-owning", "view")
     settings = "compiler", "build_type", "os", "arch"
+    exports_sources = "modules/*", "tests/*", "CMakeLists.txt", "LICENSE"
+    package_type = "static-library"
+    shared = False
 
-    python_requires = "libhal-bootstrap/[>=4.3.0 <5]"
-    python_requires_extend = "libhal-bootstrap.library"
+    @property
+    def _min_cppstd(self):
+        return "23"
+
+    @property
+    def _compilers_minimum_version(self):
+        return {
+            "gcc": ("14", "GCC 14+ required for scatter-span"),
+            "clang": ("19", "Clang 19+ required for scatter-span"),
+            "apple-clang": ("19.0.0", "Apple Clang 19+ for scatter-span"),
+            "msvc": ("193.4", "MSVC 14.34+ (Visual Studio 17.4+) for scatter-span"),
+        }
+
+    def _validate_compiler_version(self):
+        compiler = str(self.settings.compiler)
+        version = str(self.settings.compiler.version)
+        compiler_key = "msvc" if compiler == "Visual Studio" else compiler
+        min_versions = self._compilers_minimum_version
+        if compiler_key not in min_versions:
+            raise ConanInvalidConfiguration(
+                f"Compiler {compiler} is not supported for C++20 modules")
+        min_version, error_msg = min_versions[compiler_key]
+        if Version(version) < min_version:
+            raise ConanInvalidConfiguration(error_msg)
 
     def set_version(self):
         if not self.version:
             self.version = "latest"
 
+    def validate(self):
+        if self.settings.get_safe("compiler.cppstd"):
+            check_min_cppstd(self, self._min_cppstd)
+        self._validate_compiler_version()
+
+    def build_requirements(self):
+        self.tool_requires("cmake/[^4.0.0]")
+        self.tool_requires("ninja/[^1.3.0]")
+        self.tool_requires("llvm-toolchain/[^19.0]")
+        self.test_requires("boost-ext-ut/2.3.1")
+        self.tool_requires("libhal-cmake-util/[^5.0.5]")
+
     def requirements(self):
         pass
 
+    def layout(self):
+        build_path = Path("build") / (
+            str(self.settings.arch) + "-" +
+            str(self.settings.os) + "-" +
+            str(self.settings.compiler) + "-" +
+            str(self.settings.compiler.version)
+        )
+        cmake_layout(self, build_folder=str(build_path))
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.generator = "Ninja"
+        tc.generate()
+
+        deps = CMakeDeps(self)
+        deps.generate()
+
+    def build(self):
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.build()
+        if not self.conf.get("tools.build:skip_test", default=False):
+            cmake.ctest(["--output-on-failure"])
+
+    def package(self):
+        cmake = CMake(self)
+        cmake.install()
+        copy(self, "LICENSE",
+             dst=Path(self.package_folder) / "licenses",
+             src=self.source_folder)
+
     def package_info(self):
-        self.cpp_info.bindirs = []
-        self.cpp_info.libdirs = []
-        self.cpp_info.set_property("cmake_target_name", "scatter-span::scatter-span")
+        self.cpp_info.set_property("cmake_find_mode", "none")
+        self.cpp_info.builddirs.append("lib/cmake")

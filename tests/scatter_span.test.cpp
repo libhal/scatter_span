@@ -13,10 +13,9 @@
 // limitations under the License.
 
 #include <boost/ut.hpp>
-#include <scatter_span/scatter_span.hpp>
+import scatter_span;
 
 namespace {
-
 boost::ut::suite<"scatter_span"> scatter_span_test = [] {
   using namespace boost::ut;
 
@@ -24,3 +23,8 @@ boost::ut::suite<"scatter_span"> scatter_span_test = [] {
 };
 
 }  // namespace
+
+int main()
+{
+  return static_cast<int>(boost::ut::cfg<>.run());
+}
