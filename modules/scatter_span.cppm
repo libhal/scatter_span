@@ -1,6 +1,9 @@
+module;
+
 #include <array>
 #include <cstddef>
 #include <span>
+
 export module scatter_span;
 
 export namespace mem {
