@@ -97,7 +97,7 @@ class scatter_span_conan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure()
+        cmake.configure(cli_args=["-Wno-dev"])
         cmake.build()
         if not self.conf.get("tools.build:skip_test", default=False):
             cmake.ctest(["--output-on-failure"])
