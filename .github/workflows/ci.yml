@@ -9,7 +9,18 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # TODO: Add second matrix dimension for compilers once GCC supports modules
+        include:
+          - os: ubuntu-latest
+            os_name: linux
+          - os: macos-latest
+            os_name: mac
+          - os: windows-latest
+            os_name: windows
+
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,5 +30,5 @@ jobs:
       
       - name: Build and Test
         shell: bash
-        run: conan build . -pr:a hal/tc/llvm -pr hal/os/linux
+        run: conan build . -pr:a hal/tc/llvm -pr hal/os/${{ matrix.os_name }}
           
