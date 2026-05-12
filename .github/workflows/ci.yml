@@ -8,6 +8,13 @@ on:
       - main
 
 jobs:
+  lint:
+    uses: libhal/ci/.github/workflows/lint.yml@main
+    with:
+      library: scatter_span
+      source_dir: .
+      repo: libhal/scatter_span
+      
   ci:
     strategy:
       matrix:
