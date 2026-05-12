@@ -1,0 +1,23 @@
+name: ✅ CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Conan
+        uses: ./.github/actions/configure_conan
+      
+      - name: Build and Test
+        shell: bash
+        run: conan build . -pr:a hal/tc/llvm -pr hal/os/linux
+          
