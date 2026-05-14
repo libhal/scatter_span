@@ -1,6 +1,6 @@
 # scatter_span
 
-A safe, easy to use, and non-dynamic datastructure that allows groups non-contiguous data to be treated as if it was a block of contiguous data like an array. It is an unowning datastructure similiar to `std::span` however the elements do not need to be in one block in memory. 
+A safe, easy to use, and non-dynamic data structure that allows groups non-contiguous data to be treated as if it was a block of contiguous data like an array. It is a non-owning data structure similar to `std::span` however the elements do not need to be in one block in memory.
 
 > [!CAUTION]
 >
