@@ -3,17 +3,18 @@ module;
 #include <array>
 #include <cstddef>
 #include <initializer_list>
-#include <iterator>
 #include <span>
 #include <tuple>
 
 export module scatter_span;
+export import :iterator;
 
 export namespace mem {
 
 template<typename T>
 class scatter_span
 {
+
 public:
   constexpr scatter_span<T>(std::initializer_list<std::span<T>> p_il)
     : m_spans(p_il.begin(), p_il.size())
@@ -23,108 +24,21 @@ public:
     m_total_length = calculate_length();
   }
 
-  struct Iterator  // NOLINT
+  constexpr Iterator<T> begin()
   {
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = std::span<T const>;
-    using difference_type = std::ptrdiff_t;
-    using pointer = value_type const*;
-    using reference = value_type const&;
-
-    constexpr void update_cache() const
-    {
-      if (m_first == m_ptr) {
-        m_subspan_cache = m_ptr->last(m_start_pos);
-      } else if (m_ptr == m_last) {
-        m_subspan_cache = m_ptr->first(m_final_len);
-      } else {
-        m_subspan_cache = *m_ptr;
-      }
-    }
-
-    constexpr reference operator*() const
-    {
-      return m_subspan_cache;
-    }
-    constexpr pointer operator->() const
-    {
-      return &m_subspan_cache;
-    }
-
-    constexpr Iterator& operator++()
-    {
-      ++m_ptr;
-      update_cache();
-      return *this;
-    }
-    constexpr Iterator operator++(int)
-    {
-      auto tmp = *this;
-      ++(*this);
-      update_cache();
-      return tmp;
-    }
-
-    constexpr Iterator& operator--()
-    {
-      --m_ptr;
-      update_cache();
-      return *this;
-    }
-    constexpr Iterator operator--(int)
-    {
-      auto tmp = *this;
-      --(*this);
-      update_cache();
-      return tmp;
-    }
-
-    constexpr bool operator<=>(Iterator const&) const = default;
-
-  private:
-    struct iterator_args
-    {
-      pointer first;
-      pointer ptr;
-      pointer last;
-      size_t start_pos;
-      size_t final_len;
-    };
-
-    constexpr explicit Iterator(iterator_args const p_args)
-      : m_first(p_args.first)
-      , m_ptr(p_args.ptr)
-      , m_last(p_args.last)
-      , m_start_pos(p_args.start_pos)
-      , m_final_len(p_args.start_pos)
-    {
-    }
-
-    pointer m_first;
-    pointer m_last;
-    pointer m_ptr;
-
-    size_t const m_start_pos;
-    size_t const m_final_len;
-    std::span<T const> m_subspan_cache;
-  };
-
-  constexpr Iterator begin()
-  {
-    return Iterator({ .first = m_spans.data(),
-                      .ptr = m_spans.data(),
-                      .last = m_spans.data() + m_spans.size() - 1,
-                      .start_pos = m_start_pos,
-                      .final_len = m_final_len });
+    return Iterator<T>({ .first = m_spans.data(),
+                         .ptr = m_spans.data(),
+                         .last = m_spans.data() + m_spans.size() - 1,
+                         .start_pos = m_start_pos,
+                         .final_len = m_final_len });
   }
-  constexpr Iterator end()
+  constexpr Iterator<T> end()
   {
-
-    return Iterator({ .first = m_spans.data(),
-                      .ptr = m_spans.data() + m_spans.size(),
-                      .last = m_spans.data() + m_spans.size() - 1,
-                      .start_pos = m_start_pos,
-                      .final_len = m_final_len });
+    return Iterator<T>({ .first = m_spans.data(),
+                         .ptr = m_spans.data() + m_spans.size(),
+                         .last = m_spans.data() + m_spans.size() - 1,
+                         .start_pos = m_start_pos,
+                         .final_len = m_final_len });
   }
 
   struct sub_scatter_span_args

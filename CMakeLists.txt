@@ -24,6 +24,7 @@ libhal_project_init()
 libhal_add_library(scatter-span
     MODULES
         modules/scatter_span.cppm
+        modules/iterator.cppm
 )
 
 libhal_apply_compile_options(scatter-span)
