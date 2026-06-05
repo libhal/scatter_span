@@ -83,8 +83,14 @@ void print_scatter_span_addrs(scatter_span<T> const& p_ssp)
 
 boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
   using namespace boost::ut;
+  using namespace mem;
 
-  "ctor_and_len"_test = [] {
+  std::array<int, 3> first = { 1, 2, 3 };
+  std::array<int, 2> second{ 4, 5 };
+  std::array<int, 4> third = { 6, 7, 8, 9 };
+  std::array<int, 9> expected = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+
+  "ctor_and_len"_test = [&] {
     std::array<int, 3> first = { 1, 2, 3 };
     std::array<int, 2> second{ 4, 5 };
     std::array<int, 4> third = { 6, 7, 8, 9 };
@@ -94,9 +100,39 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
     mem::print_scatter_span_addrs(ssp);
     expect(that % ssp.length() == 9);
 
-    std::array<int, 9> expected = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     mem::scatter_array<int, 1> expected_ssp({ expected });
     expect(that % scatter_span_eq(ssp, expected_ssp));
+  };
+
+  "api_lifetime"_test = [&] {
+    auto mock_api = [&first, &second, &third](scatter_span<int> p_ssp) {
+      std::array<int, 9> expected = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+      mem::scatter_array<int, 1> expected_ssp(expected);
+      expect(that % scatter_span_eq(expected_ssp, p_ssp));
+
+      auto ssp_it = p_ssp.begin();
+      expect(that % first.data() == ssp_it->data());
+      ssp_it++;
+      expect(that % second.data() == ssp_it->data());
+      ssp_it++;
+      expect(that % third.data() == ssp_it->data());
+    };
+
+    mock_api({ first, second, third });
+  };
+
+  "subscatterspan"_test = [&] {
+    auto ssa = scatter_array(first, second, third);
+
+    auto subssp = ssa.sub_scatter_span({ .offset = 0, .count = 5 });
+
+    expect(that %
+           scatter_span_eq(subssp, { std::span(expected).subspan(0, 5) }));
+
+    auto unevenssp = ssa.sub_scatter_span({ .offset = 0, .count = 6 });
+
+    expect(that %
+           scatter_span_eq(unevenssp, { std::span(expected).subspan(0, 6) }));
   };
 };
 

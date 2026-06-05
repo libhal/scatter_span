@@ -18,7 +18,9 @@ struct Iterator  // NOLINT
 
   constexpr void update_cache()
   {
-    if (m_first == m_ptr) {
+    if (m_ptr > m_last) {
+      return;
+    } else if (m_first == m_ptr) {
       m_subspan_cache = m_ptr->subspan(m_start_pos);
     } else if (m_ptr == m_last) {
       m_subspan_cache = m_ptr->first(m_final_len);

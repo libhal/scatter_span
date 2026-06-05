@@ -59,7 +59,7 @@ public:
     size_t count = std::dynamic_extent;
   };
 
-  constexpr scatter_span<T> sub_scatter_span(sub_scatter_span_args const p_args)
+  constexpr scatter_span<T> sub_scatter_span(sub_scatter_span_args p_args)
   {
     auto len = length();
     if (len <= p_args.count) {
@@ -81,12 +81,20 @@ public:
     // TODO: fill in starting positions with correct values
 
     if (cur_len == p_args.count) {
-      return m_spans.subspan(0, span_idx);
+      return scatter_span<T>(
+        { .start_pos = 0, .final_len = m_spans[span_idx].size() },
+        m_spans.subspan(0, span_idx + 1));
     }
 
+    // this calculation is wrong, figure out a way to properly
+    // calculate where the final length should be. ie if there
+    // are 9 elements in a 3-2-3 configuration, and 6 are asked
+    // for the final length should be 1 as we only need to
+    // first element from the final array. maybe can do
+    // (cur_len - args.count) - final_array_size?
     auto final_offset = cur_len - p_args.count;
     return scatter_span<T>({ .start_pos = 0, .final_len = final_offset },
-                           m_spans.subspan(0, span_idx));
+                           m_spans.subspan(0, span_idx + 1));
   }
 
   [[nodiscard]] size_t length() const
@@ -111,7 +119,6 @@ protected:
   size_t m_start_pos;
   size_t m_final_len;
 
-private:
   struct position_data
   {
     size_t start_pos = 0;
@@ -119,8 +126,8 @@ private:
   };
 
   constexpr scatter_span<T>(position_data p_pos,
-                            std::initializer_list<std::span<T>> p_il)
-    : m_spans(p_il.begin(), p_il.size())
+                            std::span<std::span<T const> const> p_spans)
+    : m_spans(p_spans)
     , m_start_pos(p_pos.start_pos)
     , m_final_len(p_pos.final_len)
   {
@@ -141,15 +148,16 @@ public:
     , scatter_span<T>(this->m_internal_arr)
   {
   }
-
-  // scatter_array(std::initializer_list<std::span<T const>> p_il)
-  //   : detail::scatter_array_storage<T, N>{}
-  //   , scatter_span<T>(
-  //       std::span<std::span<T const> const>(this->m_internal_arr.data(), N),
-  //       (p_il.end() - 1)->size())
-  // {
-  //   std::copy(p_il.begin(), p_il.end(), this->m_internal_arr.begin());
-  // }
 };
+
+template<spanable First, spanable... Spans>
+  requires(
+    std::same_as<
+      typename decltype(std::span(std::declval<First&>()))::value_type,
+      typename decltype(std::span(std::declval<Spans&>()))::value_type> &&
+    ...)
+scatter_array(First& p_first, Spans&&... p_spans) -> scatter_array<
+  typename std::remove_reference_t<decltype(p_first)>::value_type,
+  sizeof...(p_spans) + 1>;
 
 }  // namespace mem
