@@ -12,17 +12,93 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <array>
 #include <boost/ut.hpp>
+#include <cstddef>
+#include <cstdint>
+#include <print>
+#include <vector>
 import scatter_span;
 
-namespace {
-boost::ut::suite<"scatter_span"> scatter_span_test = [] {
+namespace mem {
+
+}  // namespace mem
+
+namespace mem {
+
+// Exclusively exists to do comparisons, there isn't really a need for a
+// comparison between scatter spans.
+// if discovered
+template<typename T>
+bool scatter_span_eq(mem::scatter_span<T> const& lhs,
+                     mem::scatter_span<T> const& rhs)
+{
+  auto len = lhs.length();
+  if (len != rhs.length()) {
+    return false;
+  }
+
+  std::vector<T> lhs_vec;
+  std::vector<T> rhs_vec;
+
+  for (auto s : lhs) {
+    lhs_vec.append_range(s);
+  }
+
+  for (auto s : rhs) {
+    rhs_vec.append_range(s);
+  }
+
+  for (size_t i = 0; i < lhs_vec.size(); i++) {
+    if (lhs_vec[i] != rhs_vec[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+template<typename T>
+void print_scatter_span(scatter_span<T> const& p_ssp)
+{
+  std::print("[");
+  for (auto s : p_ssp) {
+    std::print("{}, ", s);
+  }
+  std::println("]");
+}
+
+template<typename T>
+void print_scatter_span_addrs(scatter_span<T> const& p_ssp)
+{
+  size_t count = 0;
+  for (auto s : p_ssp) {
+    std::println("{}: {:#x}, ", count, reinterpret_cast<uintptr_t>(&s[0]));
+    count++;
+  }
+  std::println("");
+}
+
+}  // namespace mem
+
+boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
   using namespace boost::ut;
 
-  "placeholder_test"_test = [] { expect(true); };
-};
+  "ctor_and_len"_test = [] {
+    std::array<int, 3> first = { 1, 2, 3 };
+    std::array<int, 2> second{ 4, 5 };
+    std::array<int, 4> third = { 6, 7, 8, 9 };
 
-}  // namespace
+    mem::scatter_array<int, 3> ssp(first, second, third);
+    mem::print_scatter_span(ssp);
+    mem::print_scatter_span_addrs(ssp);
+    expect(that % ssp.length() == 9);
+
+    std::array<int, 9> expected = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    mem::scatter_array<int, 1> expected_ssp({ expected });
+    expect(that % scatter_span_eq(ssp, expected_ssp));
+  };
+};
 
 int main()
 {

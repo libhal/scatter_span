@@ -16,10 +16,10 @@ struct Iterator  // NOLINT
   using pointer = value_type const*;
   using reference = value_type const&;
 
-  constexpr void update_cache() const
+  constexpr void update_cache()
   {
     if (m_first == m_ptr) {
-      m_subspan_cache = m_ptr->last(m_start_pos);
+      m_subspan_cache = m_ptr->subspan(m_start_pos);
     } else if (m_ptr == m_last) {
       m_subspan_cache = m_ptr->first(m_final_len);
     } else {
@@ -64,9 +64,16 @@ struct Iterator  // NOLINT
     return tmp;
   }
 
-  constexpr bool operator<=>(Iterator const&) const = default;
+  constexpr bool operator==(Iterator const& other) const
+  {
+    return m_ptr == other.m_ptr;
+  }
 
-private:
+  constexpr bool operator!=(Iterator const& other) const
+  {
+    return m_ptr != other.m_ptr;
+  };
+
   struct iterator_args
   {
     pointer first;
@@ -78,11 +85,12 @@ private:
 
   constexpr explicit Iterator(iterator_args const p_args)
     : m_first(p_args.first)
-    , m_ptr(p_args.ptr)
     , m_last(p_args.last)
+    , m_ptr(p_args.ptr)
     , m_start_pos(p_args.start_pos)
-    , m_final_len(p_args.start_pos)
+    , m_final_len(p_args.final_len)
   {
+    update_cache();
   }
 
   pointer m_first;

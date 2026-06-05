@@ -8,21 +8,34 @@ module;
 export module scatter_span;
 export import :iterator;
 
+namespace mem::detail {
+template<typename T, size_t N>
+struct scatter_array_storage
+{
+  std::array<std::span<T const>, N> m_internal_arr;
+};
+};  // namespace mem::detail
+
 export namespace mem {
+
+template<typename T>
+concept spanable = requires(T& t) {
+  { std::span(t) };
+};
 
 template<typename T>
 class scatter_span
 {
 
 public:
-  constexpr scatter_span<T>(std::initializer_list<std::span<T>> p_il)
+  constexpr scatter_span<T>(std::initializer_list<std::span<T const>> p_il)
     : m_spans(p_il.begin(), p_il.size())
     , m_start_pos(0)
     , m_final_len((p_il.end() - 1)->size())
   {
   }
 
-  constexpr Iterator<T> begin()
+  constexpr Iterator<T> begin() const
   {
     return Iterator<T>({ .first = m_spans.data(),
                          .ptr = m_spans.data(),
@@ -30,7 +43,8 @@ public:
                          .start_pos = m_start_pos,
                          .final_len = m_final_len });
   }
-  constexpr Iterator<T> end()
+
+  constexpr Iterator<T> end() const
   {
     return Iterator<T>({ .first = m_spans.data(),
                          .ptr = m_spans.data() + m_spans.size(),
@@ -86,13 +100,14 @@ public:
   }
 
 protected:
-  constexpr scatter_span<T>(std::span<std::span<T>> p_spans)
+  constexpr scatter_span(std::span<std::span<T const> const> p_spans)
     : m_spans(p_spans)
+    , m_start_pos(0)
     , m_final_len((p_spans.end() - 1)->size())
   {
   }
 
-  std::span<std::span<T const>> m_spans;
+  std::span<std::span<T const> const> m_spans;
   size_t m_start_pos;
   size_t m_final_len;
 
@@ -113,15 +128,28 @@ private:
 };
 
 template<typename T, size_t N>
-class scatter_array : scatter_span<T>
+class scatter_array
+  : private detail::scatter_array_storage<T, N>
+  , public scatter_span<T>
 {
-  scatter_array<T, N>(std::initializer_list<std::span<T>> p_il)
-    : m_internal_arr(p_il.begin(), p_il.size())
-    , scatter_span<T>(std::span(m_internal_arr))
+public:
+  template<spanable... Spans>
+  constexpr scatter_array(Spans&&... p_spans)
+    : detail::scatter_array_storage<T,
+                                    N>{ .m_internal_arr = { std::span<T const>(
+                                          p_spans)... } }
+    , scatter_span<T>(this->m_internal_arr)
   {
   }
 
-  std::array<std::span<T>, N> m_internal_arr;
+  // scatter_array(std::initializer_list<std::span<T const>> p_il)
+  //   : detail::scatter_array_storage<T, N>{}
+  //   , scatter_span<T>(
+  //       std::span<std::span<T const> const>(this->m_internal_arr.data(), N),
+  //       (p_il.end() - 1)->size())
+  // {
+  //   std::copy(p_il.begin(), p_il.end(), this->m_internal_arr.begin());
+  // }
 };
 
 }  // namespace mem
