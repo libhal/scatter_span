@@ -60,3 +60,9 @@ CMakeUserPresets.json
 
 # Claude Code
 .claude/
+
+# vscode
+.vscode/launch.json
+
+# Allowed for clangd resolver script
+!.vscode/settings.json
