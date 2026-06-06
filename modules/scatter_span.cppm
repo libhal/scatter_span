@@ -92,7 +92,7 @@ public:
     // for the final length should be 1 as we only need to
     // first element from the final array. maybe can do
     // (cur_len - args.count) - final_array_size?
-    auto final_offset = cur_len - p_args.count;
+    auto final_offset = p_args.count - (cur_len - m_spans[span_idx].size());
     return scatter_span<T>({ .start_pos = 0, .final_len = final_offset },
                            m_spans.subspan(0, span_idx + 1));
   }
@@ -101,7 +101,11 @@ public:
   {
     size_t res = 0;
     for (auto const& s : m_spans) {
-      res += s.size();
+      if (&m_spans.back() == &s and (res + s.size()) > m_final_len) {
+        res += m_final_len;
+      } else {
+        res += s.size();
+      }
     }
 
     return res;

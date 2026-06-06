@@ -131,6 +131,7 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
 
     auto unevenssp = ssa.sub_scatter_span({ .offset = 0, .count = 6 });
 
+    print_scatter_span(unevenssp);
     expect(that %
            scatter_span_eq(unevenssp, { std::span(expected).subspan(0, 6) }));
   };
