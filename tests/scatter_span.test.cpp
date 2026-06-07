@@ -91,10 +91,6 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
   std::array<int, 9> expected = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
   "ctor_and_len"_test = [&] {
-    std::array<int, 3> first = { 1, 2, 3 };
-    std::array<int, 2> second{ 4, 5 };
-    std::array<int, 4> third = { 6, 7, 8, 9 };
-
     mem::scatter_array<int, 3> ssp(first, second, third);
     mem::print_scatter_span(ssp);
     mem::print_scatter_span_addrs(ssp);
@@ -134,6 +130,10 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
     print_scatter_span(unevenssp);
     expect(that %
            scatter_span_eq(unevenssp, { std::span(expected).subspan(0, 6) }));
+
+    auto unevenssp_two = ssa.sub_scatter_span({ .offset = 0, .count = 2 });
+    expect(that % scatter_span_eq(unevenssp_two,
+                                  { std::span(expected).subspan(0, 2) }));
   };
 };
 
