@@ -65,7 +65,6 @@ struct Iterator  // NOLINT
   {
     auto tmp = *this;
     ++(*this);
-    update_cache();
     return tmp;
   }
 
@@ -79,7 +78,6 @@ struct Iterator  // NOLINT
   {
     auto tmp = *this;
     --(*this);
-    update_cache();
     return tmp;
   }
 
@@ -144,7 +142,7 @@ public:
   constexpr scatter_span<T>(std::initializer_list<std::span<T const>> p_il)
     : m_spans(p_il.begin(), p_il.size())
     , m_start_pos(0)
-    , m_final_len((p_il.end() - 1)->size())
+    , m_final_len(p_il.size() == 0 ? 0 : (p_il.end() - 1)->size())
   {
   }
 
@@ -160,40 +158,66 @@ public:
 
   struct sub_scatter_span_args
   {
-    size_t offset;
+    size_t offset = 0;
     size_t count = std::dynamic_extent;
   };
 
   constexpr scatter_span<T> sub_scatter_span(sub_scatter_span_args p_args)
   {
     auto len = length();
-    if (len <= p_args.count) {
-      return *this;
+
+    if (p_args.offset >= len) {
+      return scatter_span<T>({});
     }
 
-    // TODO: offset
+    if (p_args.count >= len - p_args.offset) {
+      p_args.count = len - p_args.offset;
+    }
 
     size_t cur_len = 0;
+    size_t starting_span_idx = 0;
+    size_t effective_span_size = 0;
+    bool boundry = false;
+    for (auto s : *this) {
+      effective_span_size = s.size();
+      cur_len += effective_span_size;
+      if (cur_len > p_args.offset) {
+        break;
+      } else if (cur_len == p_args.offset) {
+        starting_span_idx += 1;
+        boundry = true;
+        break;
+      }
+
+      starting_span_idx += 1;
+    }
+
+    size_t start_pos =
+      boundry ? 0 : p_args.offset - (cur_len - effective_span_size);
     size_t span_idx = 0;
-    for (std::span<T const> s : *this) {
+    cur_len = 0;
+    auto considered_spans = m_spans.subspan(starting_span_idx);
+    size_t adjusted_count = p_args.count + start_pos;
+    for (std::span<T const> s : considered_spans) {
       cur_len += s.size();
-      if (cur_len >= p_args.count) {
+      if (cur_len >= adjusted_count) {
         break;
       }
       span_idx += 1;
     }
 
-    // TODO: fill in starting positions with correct values
-
-    if (cur_len == p_args.count) {
-      return scatter_span<T>(
-        { .start_pos = 0, .final_len = m_spans[span_idx].size() },
-        m_spans.subspan(0, span_idx + 1));
+    if (cur_len == adjusted_count) {
+      size_t final_len = (span_idx == 0) ? p_args.count
+                                         : considered_spans[span_idx].size();
+      return scatter_span<T>({ .start_pos = start_pos, .final_len = final_len },
+                             considered_spans.subspan(0, span_idx + 1));
     }
 
-    auto final_offset = p_args.count - (cur_len - m_spans[span_idx].size());
-    return scatter_span<T>({ .start_pos = 0, .final_len = final_offset },
-                           m_spans.subspan(0, span_idx + 1));
+    auto final_offset =
+      adjusted_count - (cur_len - considered_spans[span_idx].size());
+    return scatter_span<T>(
+      { .start_pos = start_pos, .final_len = final_offset },
+      considered_spans.subspan(0, span_idx + 1));
   }
 
   [[nodiscard]] size_t length() const
@@ -202,8 +226,9 @@ public:
       return m_final_len;
     }
 
-    size_t res = 0;
-    for (auto const& s : m_spans.subspan(0, m_spans.size() - 1)) {
+    size_t res = m_spans[0].size() - m_start_pos;
+
+    for (auto const& s : m_spans.subspan(1, m_spans.size() - 2)) {
       res += s.size();
     }
 

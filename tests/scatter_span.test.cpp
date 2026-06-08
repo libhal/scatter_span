@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <print>
+#include <tuple>
 #include <vector>
 import scatter_span;
 
@@ -36,6 +37,10 @@ bool scatter_span_eq(mem::scatter_span<T> const& lhs,
   auto len = lhs.length();
   if (len != rhs.length()) {
     return false;
+  }
+
+  if (len == 0) {
+    return true;
   }
 
   std::vector<T> lhs_vec;
@@ -92,8 +97,6 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
 
   "ctor_and_len"_test = [&] {
     mem::scatter_array<int, 3> ssp(first, second, third);
-    mem::print_scatter_span(ssp);
-    mem::print_scatter_span_addrs(ssp);
     expect(that % ssp.length() == 9);
 
     mem::scatter_array<int, 1> expected_ssp({ expected });
@@ -134,6 +137,18 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
     auto unevenssp_two = ssa.sub_scatter_span({ .offset = 0, .count = 2 });
     expect(that % scatter_span_eq(unevenssp_two,
                                   { std::span(expected).subspan(0, 2) }));
+
+    auto offset_even_ssp = ssa.sub_scatter_span({ .offset = 2 });
+    expect(that % offset_even_ssp.length() == (ssa.length() - 2));
+    expect(that % scatter_span_eq(offset_even_ssp,
+                                  { std::span(expected).subspan(2) }));
+
+    auto uneven_offset_ssp = ssa.sub_scatter_span({ .offset = 3, .count = 5 });
+    expect(that % scatter_span_eq(uneven_offset_ssp,
+                                  { std::span(expected).subspan(3, 5) }));
+
+    auto offset_greater_than_len = ssa.sub_scatter_span({ .offset = 9 });
+    expect(that % scatter_span_eq(offset_greater_than_len, {}));
   };
 };
 
