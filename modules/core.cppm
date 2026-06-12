@@ -345,7 +345,7 @@ public:
     size_t cur_len = 0;
     size_t starting_span_idx = 0;
     size_t effective_span_size = 0;
-    bool boundry = false;
+    bool boundary = false;
     for (auto s : *this) {
       effective_span_size = s.size();
       cur_len += effective_span_size;
@@ -353,7 +353,7 @@ public:
         break;
       } else if (cur_len == p_args.offset) {
         starting_span_idx += 1;
-        boundry = true;
+        boundary = true;
         break;
       }
 
@@ -361,7 +361,7 @@ public:
     }
 
     size_t start_pos =
-      boundry ? 0 : p_args.offset - (cur_len - effective_span_size);
+      boundary ? 0 : p_args.offset - (cur_len - effective_span_size);
     size_t span_idx = 0;
     cur_len = 0;
     auto considered_spans = m_spans.subspan(starting_span_idx);

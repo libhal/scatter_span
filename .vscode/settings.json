@@ -1,3 +1,4 @@
 {
     "clangd.path": "./compile_commands_clangd_resolver.py"
 }
+

@@ -17,7 +17,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <print>
-#include <tuple>
 #include <vector>
 import scatter_span;
 
@@ -128,14 +127,14 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
     expect(that %
            scatter_span_eq(subssp, { std::span(expected).subspan(0, 5) }));
 
-    auto unevenssp = ssa.sub_scatter_span({ .offset = 0, .count = 6 });
+    auto uneven_ssp = ssa.sub_scatter_span({ .offset = 0, .count = 6 });
 
-    print_scatter_span(unevenssp);
+    print_scatter_span(uneven_ssp);
     expect(that %
-           scatter_span_eq(unevenssp, { std::span(expected).subspan(0, 6) }));
+           scatter_span_eq(uneven_ssp, { std::span(expected).subspan(0, 6) }));
 
-    auto unevenssp_two = ssa.sub_scatter_span({ .offset = 0, .count = 2 });
-    expect(that % scatter_span_eq(unevenssp_two,
+    auto uneven_ssp_two = ssa.sub_scatter_span({ .offset = 0, .count = 2 });
+    expect(that % scatter_span_eq(uneven_ssp_two,
                                   { std::span(expected).subspan(0, 2) }));
 
     auto offset_even_ssp = ssa.sub_scatter_span({ .offset = 2 });
