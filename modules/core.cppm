@@ -1,3 +1,17 @@
+// Copyright 2026 Madeline Schneider and the libhal contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 module;
 
 #include <array>
@@ -15,9 +29,9 @@ struct scatter_array_storage
 };
 };  // namespace mem::detail
 
-export namespace mem {
+namespace mem {
 
-template<typename T>
+export template<typename T>
 class scatter_span;
 
 /**
@@ -26,13 +40,12 @@ class scatter_span;
  * @details Each dereference yields a @c std::span<T const> representing one
  * contiguous segment.
  *
+ * The current pointer element is cached allowing for reads via the @c operator*
+ * and @c operator-> to be constant time.
  *
- * The cached view (@c m_subspan_cache) is recomputed on every pointer move so
- * that @c operator* and @c operator-> are O(1).
- *
- * @tparam T Element type of the underlying spans (accessed as @c T const).
+ * @tparam T Element type of the underlying spans.
  */
-template<typename T>
+export template<typename T>
 struct scatter_span_iterator
 {
   using iterator_category = std::forward_iterator_tag;
@@ -211,11 +224,9 @@ struct scatter_span_iterator
     update_cache();
   }
 
-  scatter_span<T> const*
-    m_ssp;        ///< Parent scatter_span; provides trim metadata.
-  pointer m_ptr;  ///< Pointer into m_ssp->m_spans.
-  std::span<T const>
-    m_subspan_cache;  ///< Cached trimmed view for the current span.
+  scatter_span<T> const* m_ssp;
+  pointer m_ptr;
+  std::span<T const> m_subspan_cache;
 };
 
 /**
@@ -224,7 +235,7 @@ struct scatter_span_iterator
 
   @tparam T - the underlying type for a given spanable container.
  */
-template<typename T>
+export template<typename T>
 concept spanable = requires(T& t) {
   { std::span(t) };
 };
@@ -245,7 +256,7 @@ concept spanable = requires(T& t) {
  * @code
  * void send_packet(mem::scatter_span<std::byte> payload);
  *
- * std::array<std::byte, 4> header = { ... };
+ * static std::array<std::byte, 4 const> header = { ... };
  * std::array<std::byte, 8> body   = { ... };
  * std::array<std::byte, 2> crc    = { ... };
  *
@@ -256,7 +267,7 @@ concept spanable = requires(T& t) {
  *
  * @tparam T Element type. Elements are always accessed as @c T const.
  */
-template<typename T>
+export template<typename T>
 class scatter_span
 {
 
@@ -270,7 +281,7 @@ public:
    * @param p_il Initializer list of @c std::span<T const> chunks, in logical
    *             order.
    */
-  constexpr scatter_span<T>(std::initializer_list<std::span<T const>> p_il)
+  constexpr scatter_span(std::initializer_list<std::span<T const>> p_il)
     : m_spans(p_il.begin(), p_il.size())
     , m_start_pos(0)
     , m_final_len(p_il.size() == 0 ? 0 : (p_il.end() - 1)->size())
@@ -360,8 +371,10 @@ public:
       starting_span_idx += 1;
     }
 
-    size_t start_pos =
-      boundary ? 0 : p_args.offset - (cur_len - effective_span_size);
+    size_t start_pos = 0;
+    if (!boundary) {
+      start_pos = p_args.offset - (cur_len - effective_span_size);
+    }
     size_t span_idx = 0;
     cur_len = 0;
     auto considered_spans = m_spans.subspan(starting_span_idx);
@@ -426,10 +439,6 @@ protected:
   {
   }
 
-  std::span<std::span<T const> const> m_spans;
-  size_t m_start_pos;
-  size_t m_final_len;
-
   /**
    * @brief Trim metadata produced by @c sub_scatter_span().
    */
@@ -456,6 +465,10 @@ protected:
     , m_final_len(p_pos.final_len)
   {
   }
+
+  std::span<std::span<T const> const> m_spans;
+  size_t m_start_pos;
+  size_t m_final_len;
 };
 
 /**
@@ -491,7 +504,7 @@ protected:
  * @tparam T Element type.
  * @tparam N Number of chunk spans stored internally.
  */
-template<typename T, size_t N>
+export template<typename T, size_t N>
 class scatter_array
   : private detail::scatter_array_storage<T, N>
   , public scatter_span<T>
@@ -524,7 +537,7 @@ public:
  * @details Deduces @c T from the value type of the first argument and @c N
  * from the total argument count. All arguments must have the same element type.
  */
-template<spanable First, spanable... Spans>
+export template<spanable First, spanable... Spans>
   requires(
     std::same_as<
       typename decltype(std::span(std::declval<First&>()))::value_type,

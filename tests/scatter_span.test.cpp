@@ -12,23 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <array>
-#include <boost/ut.hpp>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+
+#include <array>
 #include <print>
 #include <vector>
+
+#include <boost/ut.hpp>
+
 import scatter_span;
 
 namespace mem {
 
-}  // namespace mem
-
-namespace mem {
-
-// Exclusively exists to do comparisons, there isn't really a need for a
-// comparison between scatter spans.
-// if discovered
+/* A helper function to compare two scatter_spans. This is only useful for
+ * testing
+ */
 template<typename T>
 bool scatter_span_eq(mem::scatter_span<T> const& lhs,
                      mem::scatter_span<T> const& rhs)
@@ -85,7 +85,9 @@ void print_scatter_span_addrs(scatter_span<T> const& p_ssp)
 
 }  // namespace mem
 
-boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
+namespace {
+void basic_scatter_span_tests()
+{
   using namespace boost::ut;
   using namespace mem;
 
@@ -149,9 +151,20 @@ boost::ut::suite<"scatter_span"> basic_scatter_span_tests = [] {
     auto offset_greater_than_len = ssa.sub_scatter_span({ .offset = 9 });
     expect(that % scatter_span_eq(offset_greater_than_len, {}));
   };
+
+  "rangefor"_test = [&] {
+    mem::scatter_array<int, 3> ssp(first, second, third);
+    std::vector<std::span<int const>> exp_span({ first, second, third });
+    size_t i = 0;
+    for (auto el : ssp) {
+      expect(that % std::ranges::equal(exp_span[i], el));
+      i++;
+    }
+  };
 };
+}  // namespace
 
 int main()
 {
-  return static_cast<int>(boost::ut::cfg<>.run());
+  basic_scatter_span_tests();
 }
