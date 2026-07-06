@@ -23,7 +23,7 @@ if(NOT CMAKE_GENERATOR MATCHES "Ninja|Visual Studio")
     message(FATAL_ERROR "C++20 modules require Ninja or Visual Studio generator")
 endif()
 
-find_package(scatter-span REQUIRED CONFIG)
+find_package(scatter_span REQUIRED CONFIG)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
     string(APPEND CMAKE_CXX_FLAGS " -Qunused-arguments")
@@ -33,7 +33,7 @@ add_executable(${PROJECT_NAME} main.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_options(${PROJECT_NAME} PRIVATE -fno-rtti)
-target_link_libraries(${PROJECT_NAME} PRIVATE scatter-span::scatter-span)
+target_link_libraries(${PROJECT_NAME} PRIVATE libhal::scatter_span)
 
 if(NOT CMAKE_CROSSCOMPILING)
     target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
