@@ -33,3 +33,6 @@ libhal_add_tests(scatter-span
     TEST_NAMES
         scatter_span
 )
+
+# Kill tests after 30 seconds of hang
+set_tests_properties(test_scatter_span PROPERTIES TIMEOUT 30)
