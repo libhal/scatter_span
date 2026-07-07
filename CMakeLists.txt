@@ -34,5 +34,8 @@ libhal_add_tests(scatter-span
         scatter_span
 )
 
+
 # Kill tests after 30 seconds of hang
-set_tests_properties(test_scatter_span PROPERTIES TIMEOUT 30)
+if(NOT CMAKE_CROSSCOMPILING) # since tests are disabled
+    set_tests_properties(test_scatter_span PROPERTIES TIMEOUT 30)
+endif()
