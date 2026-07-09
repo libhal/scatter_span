@@ -307,7 +307,8 @@ public:
    *
    * @param p_spans View over the array of chunk spans.
    */
-  constexpr scatter_span(std::span<std::span<T const> const> const& p_spans)
+  constexpr scatter_span(std::span<std::span<T const> const> p_spans
+                         [[MEM_LIFETIMEBOUND]])
     : m_spans(p_spans)
     , m_final_len(p_spans.back().size())
   {
