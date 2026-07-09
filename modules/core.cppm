@@ -19,6 +19,22 @@ module;
 #include <initializer_list>
 #include <span>
 
+#if defined(__has_cpp_attribute)
+#if __has_cpp_attribute(clang::lifetimebound)
+#define MEM_LIFETIMEBOUND clang::lifetimebound
+#elif __has_cpp_attribute(msvc::lifetimebound)
+#define MEM_LIFETIMEBOUND msvc::lifetimebound
+#endif
+#endif
+
+#ifndef MEM_LIFETIMEBOUND
+// TODO(gcc): no equivalent attribute as of GCC 15. When one ships, add:
+// #elif __has_cpp_attribute(gnu::lifetime_bound)
+// #    define MEM_LIFETIMEBOUND [[gnu::lifetime_bound]]
+// above, before this fallback.
+#define MEM_LIFETIMEBOUND
+#endif
+
 export module scatter_span:core;
 
 namespace mem::detail {
@@ -284,6 +300,20 @@ class scatter_span
 {
 public:
   /**
+   * @brief Constructs a scatter_span directly from a span-of-spans.
+   *
+   * @details Used by @c scatter_array to hand its internal storage to the base
+   * class. Assumes full extents of the first and last chunks with no trimming.
+   *
+   * @param p_spans View over the array of chunk spans.
+   */
+  constexpr scatter_span(std::span<std::span<T const> const> const& p_spans)
+    : m_spans(p_spans)
+    , m_final_len(p_spans.back().size())
+  {
+  }
+
+  /**
    * @brief Constructs a scatter_span from a brace-enclosed list of spans.
    *
    * @details The first and last spans are recorded for trim purposes. An empty
@@ -292,16 +322,10 @@ public:
    * @param p_il Initializer list of @c std::span<T const> chunks, in logical
    *             order.
    */
-  constexpr scatter_span(std::initializer_list<std::span<T const>> p_il)
-    : m_spans(p_il.begin(), p_il.size())
-    , m_start_pos(0)
-    , m_final_len([&]() -> auto {
-      if (p_il.size() == 0) {
-        return 0uz;
-      } else {
-        return (p_il.end() - 1)->size();
-      }
-    }())
+  constexpr scatter_span(std::initializer_list<std::span<T const>> p_spans
+                         [[MEM_LIFETIMEBOUND]])
+    : m_spans(p_spans.begin(), p_spans.end())
+    , m_final_len((p_spans.end() - 1)->size())
   {
   }
 
@@ -309,30 +333,72 @@ public:
    * @brief Construct an empty scatter span
    *
    */
-  constexpr scatter_span()
-    : m_spans{}
-    , m_start_pos(0)
-    , m_final_len(0)
-  {
-  }
+  constexpr scatter_span() = default;
 
   /**
    * @brief Returns an iterator to the first span chunk.
    * @return @c scatter_span_iterator<T> pointing at the first chunk.
    */
-  [[nodiscard]] constexpr scatter_span_iterator<T> begin() const
+  [[nodiscard]] constexpr scatter_span_iterator<T> begin() const&
   {
     return scatter_span_iterator<T>(*this, 0);
   }
 
   /**
+   * @brief Deleted overload preventing iteration over a temporary
+   * @c scatter_array.
+   *
+   * @details @c scatter_array owns its span-array storage (@c m_internal_arr).
+   * Calling @c begin() on an rvalue would produce an iterator that outlives the
+   * @c scatter_array temporary destroying that storage, leaving the returned
+   * iterator dangling into freed memory. This overload is deleted to force a
+   * compile-time error at the call site instead of runtime undefined behavior.
+   *
+   * @par Example (rejected at compile time)
+   * @code
+   * // ERROR: use of deleted function
+   * auto it = mem::scatter_array(a, b, c).begin();
+   * @endcode
+   *
+   * @par Fix: bind to a named variable first
+   * @code
+   * auto ssa = mem::scatter_array(a, b, c);
+   * auto it = ssa.begin();  // OK — ssa outlives `it`
+   * @endcode
+   */
+  constexpr scatter_span_iterator<T> begin() const&& = delete;
+
+  /**
    * @brief Returns a past-the-end iterator.
    * @return @c scatter_span_iterator<T> pointing one past the last chunk.
    */
-  [[nodiscard]] constexpr scatter_span_iterator<T> end() const
+  [[nodiscard]] constexpr scatter_span_iterator<T> end() const&
   {
     return scatter_span_iterator<T>(*this, m_spans.size());
   }
+
+  /**
+   * @brief Deleted overload preventing end-iteration over a temporary
+   * @c scatter_array.
+   *
+   * @details Mirrors @c begin() const&& = delete for the same reason: an
+   * end-iterator produced from an rvalue @c scatter_array would reference
+   * storage (@c m_internal_arr) that no longer exists once the temporary is
+   * destroyed at the end of the full-expression.
+   *
+   * @par Example (rejected at compile time)
+   * @code
+   * // ERROR: use of deleted function
+   * auto it = mem::scatter_array(a, b, c).end();
+   * @endcode
+   *
+   * @par Fix: bind to a named variable first
+   * @code
+   * auto ssa = mem::scatter_array(a, b, c);
+   * auto it = ssa.end();  // OK — ssa outlives `it`
+   * @endcode
+   */
+  constexpr scatter_span_iterator<T> end() const&& = delete;
 
   /**
    * @brief Arguments for @c sub_scatter_span().
@@ -369,17 +435,30 @@ public:
    * @param p_args Offset and count describing the desired sub-range.
    * @return A new @c scatter_span<T> covering the requested elements.
    */
-  constexpr scatter_span<T> sub_scatter_span(sub_scatter_span_args p_args)
+  constexpr scatter_span<T> sub_scatter_span(sub_scatter_span_args p_args) &
   {
     if (m_spans.size() == 1) {
+      auto& the_only_span = m_spans[0];
+
+      if (p_args.offset >= the_only_span.size()) {
+        return {};
+      }
+
+      auto const clamped_length =
+        std::min(p_args.count, the_only_span.size() - p_args.offset);
+
       return scatter_span<T>(
-        { .start_pos = p_args.offset, .final_len = p_args.count }, m_spans);
+        {
+          .start_pos = p_args.offset,
+          .final_len = clamped_length,
+        },
+        m_spans);
     }
 
     auto const len = length();
 
     if (p_args.offset >= len) {
-      return scatter_span<T>({});
+      return {};
     }
 
     if (p_args.count >= len - p_args.offset) {
@@ -410,8 +489,8 @@ public:
     }
     size_t span_idx = 0;
     cur_len = 0;
-    auto considered_spans = m_spans.subspan(starting_span_idx);
-    size_t adjusted_count = p_args.count + start_pos;
+    auto const considered_spans = m_spans.subspan(starting_span_idx);
+    size_t const adjusted_count = p_args.count + start_pos;
     for (std::span<T const> s : considered_spans) {
       cur_len += s.size();
       if (cur_len >= adjusted_count) {
@@ -421,18 +500,49 @@ public:
     }
 
     if (cur_len == adjusted_count) {
-      size_t final_len =
+      size_t const final_len =
         (span_idx == 0) ? p_args.count : considered_spans[span_idx].size();
       return scatter_span<T>({ .start_pos = start_pos, .final_len = final_len },
                              considered_spans.subspan(0, span_idx + 1));
     }
 
-    auto final_offset =
+    auto const final_offset =
       adjusted_count - (cur_len - considered_spans[span_idx].size());
     return scatter_span<T>(
       { .start_pos = start_pos, .final_len = final_offset },
       considered_spans.subspan(0, span_idx + 1));
   }
+
+  /**
+   * @brief Deleted overload preventing sub-view creation from a temporary
+   * @c scatter_array.
+   *
+   * @details @c sub_scatter_span() returns a @c scatter_span<T> that views
+   * @c scatter_array's internally owned span array. If called on an rvalue,
+   * the returned @c scatter_span would reference storage destroyed at the end
+   * of the full-expression that created the temporary @c scatter_array,
+   * leaving the result dangling. This overload is deleted so misuse fails to
+   * compile rather than producing a sub-view that reads freed memory.
+   *
+   * @par Example (rejected at compile time)
+   * @code
+   * // ERROR: use of deleted function
+   * auto sub = mem::scatter_array(a, b, c).sub_scatter_span({ .count = 5 });
+   * @endcode
+   *
+   * @par Fix: bind to a named variable first
+   * @code
+   * auto ssa = mem::scatter_array(a, b, c);
+   * auto sub = ssa.sub_scatter_span({ .count = 5 });  // OK — ssa outlives sub
+   * @endcode
+   *
+   * @note This restriction applies only to @c scatter_array, which owns its
+   * span storage. @c scatter_span itself is safe to construct and use as a
+   * temporary, since the data it views lives in the caller's expression, not
+   * in the @c scatter_span object.
+   */
+  constexpr scatter_span<T> sub_scatter_span(sub_scatter_span_args p_args) && =
+    delete;
 
   /**
    * @brief Returns the total number of logical elements across all chunks.
@@ -458,21 +568,6 @@ public:
   friend struct scatter_span_iterator<T>;
 
 protected:
-  /**
-   * @brief Constructs a scatter_span directly from a span-of-spans.
-   *
-   * @details Used by @c scatter_array to hand its internal storage to the base
-   * class. Assumes full extents of the first and last chunks with no trimming.
-   *
-   * @param p_spans View over the array of chunk spans.
-   */
-  constexpr scatter_span(std::span<std::span<T const> const> p_spans)
-    : m_spans(p_spans)
-    , m_start_pos(0)
-    , m_final_len((p_spans.end() - 1)->size())
-  {
-  }
-
   /**
    * @brief Trim metadata produced by @c sub_scatter_span().
    */
@@ -500,9 +595,9 @@ protected:
   {
   }
 
-  std::span<std::span<T const> const> m_spans;
-  size_t m_start_pos;
-  size_t m_final_len;
+  std::span<std::span<T const> const> m_spans{};
+  size_t m_start_pos = 0;
+  size_t m_final_len = 0;
 };
 
 /**
@@ -559,7 +654,7 @@ public:
   constexpr scatter_array(Spans&&... p_spans)
     : detail::scatter_array_storage<T,
                                     N>{ .m_internal_arr = { std::span<T const>(
-                                          p_spans)... } }
+                                          p_spans)... }, }
     , scatter_span<T>(this->m_internal_arr)
   {
   }
@@ -580,5 +675,4 @@ export template<spanable First, spanable... Spans>
 scatter_array(First& p_first, Spans&&... p_spans) -> scatter_array<
   typename std::remove_reference_t<decltype(p_first)>::value_type,
   sizeof...(p_spans) + 1>;
-
 }  // namespace mem

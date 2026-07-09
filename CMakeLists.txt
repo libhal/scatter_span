@@ -15,6 +15,7 @@
 cmake_minimum_required(VERSION 4.0)
 
 set(CMAKE_COLOR_DIAGNOSTICS ON)
+set(LIBHAL_ENABLE_CLANG_TIDY ON)
 
 project(scatter_span LANGUAGES CXX)
 
