@@ -161,8 +161,8 @@ void basic_scatter_span_tests()
 
     auto subssp = ssa.sub_scatter_span({ .offset = 20, .count = 5 });
 
-    expect(that % 0uz == ssa.length());
-    expect(that % subssp == scatter_span<int>{});
+    expect(that % 0uz == subssp.length());
+    expect(that % scatter_span<int>{} == subssp);
   };
 
   "sub_scatter_span() single element span"_test = [&] {
