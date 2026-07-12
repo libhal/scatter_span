@@ -41,7 +41,7 @@ namespace mem::detail {
 template<typename T, size_t N>
 struct scatter_array_storage
 {
-  std::array<std::span<T const>, N> m_internal_arr;
+  std::array<std::span<T>, N> m_internal_arr;
 };
 };  // namespace mem::detail
 
@@ -62,13 +62,14 @@ class scatter_span;
  * @tparam T Element type of the underlying spans.
  */
 export template<typename T>
-struct scatter_span_iterator
+class scatter_span_iterator
 {
+public:
   using iterator_category = std::forward_iterator_tag;
-  using value_type = std::span<T const>;
+  using value_type = std::span<T>;
   using difference_type = std::ptrdiff_t;
-  using pointer = value_type const*;
-  using reference = value_type const&;
+  using pointer = value_type*;
+  using reference = value_type&;
 
   constexpr value_type get() const
   {
@@ -240,15 +241,17 @@ struct scatter_span_iterator
     return not(*this == p_other);
   };
 
+private:
+  friend class scatter_span<T>;
   /**
    * @brief Constructs an iterator for @p p_ssp pointing at @p p_ptr.
    * @param p_ssp Parent scatter_span providing trim metadata.
    * @param p_ptr Pointer into @p p_ssp's internal span array.
    * @note The cache is primed immediately on construction.
    */
-  constexpr explicit scatter_span_iterator(scatter_span<T> const& p_ssp,
+  constexpr explicit scatter_span_iterator(scatter_span<T> const* p_ssp,
                                            size_t p_initial_index)
-    : m_scatter_span(&p_ssp)
+    : m_scatter_span(p_ssp)
     , m_index(p_initial_index)
   {
   }
@@ -307,7 +310,7 @@ public:
    *
    * @param p_spans View over the array of chunk spans.
    */
-  constexpr scatter_span(std::span<std::span<T const> const> p_spans
+  constexpr scatter_span(std::span<std::span<T> const> p_spans
                          [[MEM_LIFETIMEBOUND]])
     : m_spans(p_spans)
     , m_final_len(p_spans.back().size())
@@ -323,7 +326,7 @@ public:
    * @param p_il Initializer list of @c std::span<T const> chunks, in logical
    *             order.
    */
-  constexpr scatter_span(std::initializer_list<std::span<T const>> p_spans
+  constexpr scatter_span(std::initializer_list<std::span<T>> p_spans
                          [[MEM_LIFETIMEBOUND]])
     : m_spans(p_spans.begin(), p_spans.end())
     , m_final_len((p_spans.end() - 1)->size())
@@ -342,7 +345,7 @@ public:
    */
   [[nodiscard]] constexpr scatter_span_iterator<T> begin() const&
   {
-    return scatter_span_iterator<T>(*this, 0);
+    return scatter_span_iterator<T>(this, 0);
   }
 
   /**
@@ -375,7 +378,7 @@ public:
    */
   [[nodiscard]] constexpr scatter_span_iterator<T> end() const&
   {
-    return scatter_span_iterator<T>(*this, m_spans.size());
+    return scatter_span_iterator<T>(this, m_spans.size());
   }
 
   /**
@@ -566,7 +569,7 @@ public:
     return res + m_final_len;
   }
 
-  friend struct scatter_span_iterator<T>;
+  friend class scatter_span_iterator<T>;
 
 protected:
   /**
@@ -588,15 +591,15 @@ protected:
    * @param p_pos   Trim parameters for the first and last chunks.
    * @param p_spans The subset of chunk spans to reference.
    */
-  constexpr scatter_span<T>(position_data p_pos,
-                            std::span<std::span<T const> const> p_spans)
+  constexpr scatter_span(position_data p_pos,
+                         std::span<std::span<T> const> p_spans)
     : m_spans(p_spans)
     , m_start_pos(p_pos.start_pos)
     , m_final_len(p_pos.final_len)
   {
   }
 
-  std::span<std::span<T const> const> m_spans{};
+  std::span<std::span<T> const> m_spans{};
   size_t m_start_pos = 0;
   size_t m_final_len = 0;
 };
@@ -654,9 +657,9 @@ public:
   template<spanable... Spans>
   constexpr scatter_array(Spans&&... p_spans)
     : detail::scatter_array_storage<T,
-                                    N>{ .m_internal_arr = { std::span<T const>(
+                                    N>{ .m_internal_arr = { std::span<T>(
                                           p_spans)... }, }
-    , scatter_span<T>(this->m_internal_arr)
+    , scatter_span<T>(std::span<std::span<T> const>(this->m_internal_arr))
   {
   }
 };
