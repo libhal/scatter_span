@@ -25,6 +25,27 @@
 import scatter_span;
 
 namespace mem {
+/* Prints the logical element sequence of a scatter_span, e.g. `[1, 2, 3]`.
+ * Lets boost::ut print the operands of a failed `expect` involving a
+ * scatter_span.
+ */
+template<typename T>
+std::ostream& operator<<(std::ostream& p_os, scatter_span<T> const& p_ssp)
+{
+  p_os << "[ ";
+  for (auto chunk : p_ssp) {
+    p_os << "[ ";
+    for (size_t i = 0; i < chunk.size(); i++) {
+      p_os << chunk[i];
+      if (i != chunk.size() - 1) {
+        p_os << ", ";
+      }
+    }
+    p_os << " ]";
+  }
+  p_os << " ]";
+  return p_os;
+}
 
 /* A helper function to compare two scatter_spans. This is only useful for
  * testing
