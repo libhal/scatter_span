@@ -28,7 +28,6 @@
 import scatter_span;
 
 namespace mem {
-
 /* Prints the logical element sequence of a scatter_span, e.g. `[1, 2, 3]`.
  * Lets boost::ut print the operands of a failed `expect` involving a
  * scatter_span.
