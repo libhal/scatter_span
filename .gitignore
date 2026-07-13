@@ -66,3 +66,7 @@ CMakeUserPresets.json
 
 # Allowed for clangd resolver script
 !.vscode/settings.json
+
+# Doxygen output
+html/
+latex/

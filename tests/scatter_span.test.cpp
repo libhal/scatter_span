@@ -17,7 +17,10 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
+#include <ostream>
 #include <print>
+#include <span>
 #include <vector>
 
 #include <boost/ut.hpp>
@@ -26,19 +29,39 @@ import scatter_span;
 
 namespace mem {
 
+/* Prints the logical element sequence of a scatter_span, e.g. `[1, 2, 3]`.
+ * Lets boost::ut print the operands of a failed `expect` involving a
+ * scatter_span.
+ */
+template<typename T>
+std::ostream& operator<<(std::ostream& p_os, scatter_span<T> const& p_ssp)
+{
+  p_os << "[ ";
+  for (auto chunk : p_ssp) {
+    p_os << "[ ";
+    for (size_t i = 0; i < chunk.size(); i++) {
+      p_os << chunk[i];
+      if (i != chunk.size() - 1) {
+        p_os << ", ";
+      }
+    }
+    p_os << " ]";
+  }
+  p_os << " ]";
+  return p_os;
+}
+
 /* A helper function to compare two scatter_spans. This is only useful for
  * testing
  */
 template<typename T>
-bool scatter_span_eq(mem::scatter_span<T> const& lhs,
-                     mem::scatter_span<T> const& rhs)
+bool operator==(scatter_span<T> const& lhs, scatter_span<T> const& rhs)
 {
-  auto len = lhs.length();
-  if (len != rhs.length()) {
+  if (lhs.length() != rhs.length()) {
     return false;
   }
 
-  if (len == 0) {
+  if (lhs.length() == 0) {
     return true;
   }
 
@@ -53,36 +76,8 @@ bool scatter_span_eq(mem::scatter_span<T> const& lhs,
     rhs_vec.append_range(s);
   }
 
-  for (size_t i = 0; i < lhs_vec.size(); i++) {
-    if (lhs_vec[i] != rhs_vec[i]) {
-      return false;
-    }
-  }
-
-  return true;
+  return std::ranges::equal(lhs_vec, rhs_vec);
 }
-
-template<typename T>
-void print_scatter_span(scatter_span<T> const& p_ssp)
-{
-  std::print("[");
-  for (auto s : p_ssp) {
-    std::print("{}, ", s);
-  }
-  std::println("]");
-}
-
-template<typename T>
-void print_scatter_span_addrs(scatter_span<T> const& p_ssp)
-{
-  size_t count = 0;
-  for (auto s : p_ssp) {
-    std::println("{}: {:#x}, ", count, reinterpret_cast<uintptr_t>(&s[0]));
-    count++;
-  }
-  std::println("");
-}
-
 }  // namespace mem
 
 namespace {
@@ -96,19 +91,23 @@ void basic_scatter_span_tests()
   std::array<int, 4> third = { 6, 7, 8, 9 };
   std::array<int, 9> expected = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
-  "ctor_and_len"_test = [&] {
-    mem::scatter_array<int, 3> ssp(first, second, third);
+  "empty span should have zero length"_test = [&] {
+    scatter_span<int> empty_scatter_span{};
+    expect(that % empty_scatter_span.length() == 0);
+  };
+
+  "constructor & length"_test = [&] {
+    scatter_array<int, 3> ssp(first, second, third);
     expect(that % ssp.length() == 9);
 
-    mem::scatter_array<int, 1> expected_ssp({ expected });
-    expect(that % scatter_span_eq(ssp, expected_ssp));
+    expect(that % ssp == scatter_span<int>{ expected });
   };
 
   "api_lifetime"_test = [&] {
     auto mock_api = [&first, &second, &third](scatter_span<int> p_ssp) {
       std::array<int, 9> expected = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-      mem::scatter_array<int, 1> expected_ssp(expected);
-      expect(that % scatter_span_eq(expected_ssp, p_ssp));
+      scatter_array<int, 1> expected_ssp(expected);
+      expect(that % expected_ssp == p_ssp);
 
       auto ssp_it = p_ssp.begin();
       expect(that % first.data() == ssp_it->data());
@@ -121,42 +120,94 @@ void basic_scatter_span_tests()
     mock_api({ first, second, third });
   };
 
-  "subscatterspan"_test = [&] {
-    auto ssa = scatter_array(first, second, third);
+  "sub_scatter_span()"_test = [&] {
+    scatter_array ssa = { first, second, third };
 
     auto subssp = ssa.sub_scatter_span({ .offset = 0, .count = 5 });
-
-    expect(that %
-           scatter_span_eq(subssp, { std::span(expected).subspan(0, 5) }));
+    expect(that % subssp == scatter_span<int>{ std::span(expected).first(5) });
 
     auto uneven_ssp = ssa.sub_scatter_span({ .offset = 0, .count = 6 });
-
-    print_scatter_span(uneven_ssp);
-    expect(that %
-           scatter_span_eq(uneven_ssp, { std::span(expected).subspan(0, 6) }));
+    expect(that % uneven_ssp ==
+           scatter_span<int>{ std::span(expected).first(6) });
 
     auto uneven_ssp_two = ssa.sub_scatter_span({ .offset = 0, .count = 2 });
-    expect(that % scatter_span_eq(uneven_ssp_two,
-                                  { std::span(expected).subspan(0, 2) }));
+    expect(that % uneven_ssp_two ==
+           scatter_span<int>{ std::span(expected).first(2) });
 
     auto offset_even_ssp = ssa.sub_scatter_span({ .offset = 2 });
     expect(that % offset_even_ssp.length() == (ssa.length() - 2));
-    expect(that % scatter_span_eq(offset_even_ssp,
-                                  { std::span(expected).subspan(2) }));
+    expect(that % offset_even_ssp ==
+           scatter_span<int>{ std::span(expected).subspan(2) });
 
     auto uneven_offset_ssp = ssa.sub_scatter_span({ .offset = 3, .count = 5 });
-    expect(that % scatter_span_eq(uneven_offset_ssp,
-                                  { std::span(expected).subspan(3, 5) }));
+    expect(that % uneven_offset_ssp ==
+           scatter_span<int>{ std::span(expected).subspan(3, 5) });
 
     auto offset_greater_than_len = ssa.sub_scatter_span({ .offset = 9 });
-    expect(that % scatter_span_eq(offset_greater_than_len, {}));
+    expect(that % offset_greater_than_len == scatter_span<int>{});
   };
 
-  "rangefor"_test = [&] {
-    mem::scatter_array<int, 3> ssp(first, second, third);
+  "sub_scatter_span() empty span"_test = [&] {
+    scatter_span<int> ssa{};
+
+    auto subssp = ssa.sub_scatter_span({ .offset = 0, .count = 5 });
+
+    expect(that % 0uz == ssa.length());
+    expect(that % subssp == scatter_span<int>{});
+  };
+
+  "sub_scatter_span() with range that exceeds space"_test = [&] {
+    scatter_array ssa = { first, second, third };
+
+    auto subssp = ssa.sub_scatter_span({ .offset = 20, .count = 5 });
+
+    expect(that % 0uz == subssp.length());
+    expect(that % scatter_span<int>{} == subssp);
+  };
+
+  "sub_scatter_span() single element span"_test = [&] {
+    scatter_array ssa = { third };
+    // Pick the middle two elements of the third array
+    auto subssp = ssa.sub_scatter_span({ .offset = 1, .count = 2 });
+    scatter_array<int, 1> const expected({ std::span(third).subspan(1, 2) });
+    expect(that % subssp == expected);
+  };
+
+  // "sub_scatter_span() single element span that exceeds its bounds"_test = [&]
+  // {
+  //   scatter_array ssa = { third };
+  //   // Pick the middle two elements of the third array
+  //   auto subssp = ssa.sub_scatter_span({ .offset = 1, .count = 10 });
+  //   scatter_array<int, 1> const expected({ std::span(third).subspan(1, 3) });
+  //   expect(that % subssp == expected);
+  // };
+
+  "range for scatter_array"_test = [&] {
+    scatter_array<int, 3> s_array(first, second, third);
     std::vector<std::span<int const>> exp_span({ first, second, third });
     size_t i = 0;
-    for (auto el : ssp) {
+    for (auto el : s_array) {
+      expect(that % std::ranges::equal(exp_span[i], el));
+      i++;
+    }
+  };
+
+  "range for scatter_span"_test = [&] {
+    scatter_array<int, 3> s_array(first, second, third);
+    std::vector<std::span<int const>> exp_span({ first, second, third });
+    scatter_span<int> s_span(s_array);
+    size_t i = 0;
+    for (auto el : s_span) {
+      expect(that % std::ranges::equal(exp_span[i], el));
+      i++;
+    }
+  };
+
+  "range for scatter_span (empty)"_test = [&] {
+    std::vector<std::span<int const>> exp_span{};
+    scatter_span<int> s_span{};
+    size_t i = 0;
+    for (auto el : s_span) {
       expect(that % std::ranges::equal(exp_span[i], el));
       i++;
     }

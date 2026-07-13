@@ -16,24 +16,23 @@ cmake_minimum_required(VERSION 4.0)
 
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 
-project(scatter-span LANGUAGES CXX)
+project(scatter_span LANGUAGES CXX)
 
 find_package(LibhalCMakeUtil REQUIRED)
 
 libhal_project_init()
-libhal_add_library(scatter-span
+libhal_add_library(scatter_span
     MODULES
         modules/scatter_span.cppm
         modules/core.cppm
 )
 
-libhal_apply_compile_options(scatter-span)
-libhal_install_library(scatter-span NAMESPACE scatter-span)
-libhal_add_tests(scatter-span
+libhal_apply_compile_options(scatter_span)
+libhal_install_library(scatter_span NAMESPACE libhal)
+libhal_add_tests(scatter_span
     TEST_NAMES
         scatter_span
 )
-
 
 # Kill tests after 30 seconds of hang
 if(NOT CMAKE_CROSSCOMPILING) # since tests are disabled
