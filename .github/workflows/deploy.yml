@@ -28,6 +28,8 @@ jobs:
       remote_url: https://libhal.jfrog.io/artifactory/api/conan/trunk-conan
       modules_support_needed: true
       coroutine_support_needed: true
+      llvm_profile: hal/tc/llvm-23
+      conan_version: 2.33.0  # first release that knows clang 23
     secrets:
       conan_remote_password: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN }}
       conan_remote_user: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN_USER }}
