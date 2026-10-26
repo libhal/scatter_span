@@ -279,7 +279,7 @@ void basic_scatter_span_tests()
 
     // Verify
     expect(that % 1 == calls);
-    expect(that % (1 * 3 + 2 * 4) == total);
+    expect(that % ((1 * 3) + (2 * 4)) == total);
   };
 
   "for_each_run() writes through to the elements"_test = [&] {

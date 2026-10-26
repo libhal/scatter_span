@@ -734,18 +734,18 @@ constexpr void for_each_run(scatter_span<T> p_first,
   std::span<U> second_chunk{};
 
   while (true) {
-    while (first_chunk.empty() && first_chunks != first_end) {
+    while (first_chunk.empty() and (first_chunks != first_end)) {
       first_chunk = *first_chunks++;
     }
-    while (second_chunk.empty() && second_chunks != second_end) {
+    while (second_chunk.empty() and (second_chunks != second_end)) {
       second_chunk = *second_chunks++;
     }
-    if (first_chunk.empty() && second_chunk.empty()) {
+    if (first_chunk.empty() and second_chunk.empty()) {
       return;
     }
 
     auto run = std::max(first_chunk.size(), second_chunk.size());
-    if (not first_chunk.empty() && not second_chunk.empty()) {
+    if (not first_chunk.empty() and not second_chunk.empty()) {
       run = std::min(first_chunk.size(), second_chunk.size());
     }
     auto const first_run = first_chunk.first(std::min(run, first_chunk.size()));
