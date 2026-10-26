@@ -6,6 +6,9 @@
         "span",
         "libhal",
         "spanable",
-        "subssp"
+        "subssp",
+        "doxygenclass",
+        "doxygenconcept",
+        "doxygenfunction"
     ]
 }
