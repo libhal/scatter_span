@@ -21,6 +21,7 @@
 #include <ostream>
 #include <print>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include <boost/ut.hpp>
@@ -210,6 +211,106 @@ void basic_scatter_span_tests()
       expect(that % std::ranges::equal(exp_span[i], el));
       i++;
     }
+  };
+  "for_each_run() splits at whichever chunk boundary comes first"_test = [&] {
+    // Setup
+    std::array<int, 2> a = { 1, 2 };
+    std::array<int, 3> b = { 3, 4, 5 };
+    std::array<int, 4> c = { 6, 7, 8, 9 };
+    std::array<int, 1> d = { 10 };
+    std::vector<std::pair<std::vector<int>, std::vector<int>>> runs;
+
+    // Exercise
+    for_each_run(scatter_span<int>{ a, b },
+                 scatter_span<int>{ c, d },
+                 [&runs](std::span<int> p_first, std::span<int> p_second) {
+                   runs.emplace_back(
+                     std::vector<int>(p_first.begin(), p_first.end()),
+                     std::vector<int>(p_second.begin(), p_second.end()));
+                 });
+
+    // Verify
+    using run = std::pair<std::vector<int>, std::vector<int>>;
+    expect(that % 3uz == runs.size());
+    expect(runs[0] == run{ { 1, 2 }, { 6, 7 } });
+    expect(runs[1] == run{ { 3, 4 }, { 8, 9 } });
+    expect(runs[2] == run{ { 5 }, { 10 } });
+  };
+
+  "for_each_run() passes empty spans once one side runs out"_test = [&] {
+    // Setup
+    std::array<int, 1> a = { 1 };
+    std::array<int, 2> b = { 2, 3 };
+    std::array<int, 1> c = { 4 };
+    std::vector<std::pair<std::size_t, std::size_t>> sizes;
+
+    // Exercise
+    for_each_run(scatter_span<int>{ a },
+                 scatter_span<int>{ b, c },
+                 [&sizes](std::span<int> p_first, std::span<int> p_second) {
+                   sizes.emplace_back(p_first.size(), p_second.size());
+                 });
+
+    // Verify
+    using size_pair = std::pair<std::size_t, std::size_t>;
+    expect(that % 3uz == sizes.size());
+    expect(sizes[0] == size_pair{ 1, 1 });
+    expect(sizes[1] == size_pair{ 0, 1 });
+    expect(sizes[2] == size_pair{ 0, 1 });
+  };
+
+  "for_each_run() skips empty chunks"_test = [&] {
+    // Setup
+    std::array<int, 2> a = { 1, 2 };
+    std::array<int, 2> b = { 3, 4 };
+    std::span<int> empty{};
+    int calls = 0;
+    int total = 0;
+
+    // Exercise
+    for_each_run(scatter_span<int>{ empty, a, empty },
+                 scatter_span<int>{ b, empty },
+                 [&](std::span<int> p_first, std::span<int> p_second) {
+                   calls++;
+                   for (auto i = 0uz; i < p_first.size(); i++) {
+                     total += p_first[i] * p_second[i];
+                   }
+                 });
+
+    // Verify
+    expect(that % 1 == calls);
+    expect(that % (1 * 3 + 2 * 4) == total);
+  };
+
+  "for_each_run() writes through to the elements"_test = [&] {
+    // Setup
+    std::array<int, 3> const source = { 1, 2, 3 };
+    std::array<int, 1> head{};
+    std::array<int, 2> tail{};
+
+    // Exercise
+    for_each_run(scatter_span<int const>{ source },
+                 scatter_span<int>{ head, tail },
+                 [](std::span<int const> p_from, std::span<int> p_to) {
+                   std::ranges::copy(p_from, p_to.begin());
+                 });
+
+    // Verify
+    expect(that % 1 == head[0]);
+    expect(tail == std::array<int, 2>{ 2, 3 });
+  };
+
+  "for_each_run() of two empty scatter spans calls nothing"_test = [&] {
+    // Setup
+    int calls = 0;
+
+    // Exercise
+    for_each_run(scatter_span<int>{},
+                 scatter_span<int>{},
+                 [&calls](std::span<int>, std::span<int>) { calls++; });
+
+    // Verify
+    expect(that % 0 == calls);
   };
 };
 }  // namespace

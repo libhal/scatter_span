@@ -14,7 +14,9 @@
 
 module;
 
+#include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <initializer_list>
 #include <span>
@@ -679,4 +681,79 @@ export template<spanable First, spanable... Spans>
 scatter_array(First& p_first, Spans&&... p_spans) -> scatter_array<
   typename std::remove_reference_t<decltype(p_first)>::value_type,
   sizeof...(p_spans) + 1>;
+/**
+ * @brief Walk two scatter spans side by side, one contiguous run at a time
+ *
+ * @details Calls @p p_function with the longest pair of spans, one from each
+ * scatter span, that starts at the same logical position and is contiguous
+ * in both. Each run ends at whichever chunk boundary comes first, so every
+ * element of both scatter spans is passed exactly once, in order. Empty
+ * chunks are skipped.
+ *
+ * While both scatter spans have elements left, the two spans of a run are
+ * the same size. Once one of them runs out, its span is empty and the run is
+ * the rest of the other's current chunk. Use this for transfers that move
+ * two buffers in lockstep, such as a full duplex bus where one side may be
+ * shorter than the other.
+ *
+ * @par Example
+ * @code
+ * std::array<int, 2> a = { 1, 2 };
+ * std::array<int, 3> b = { 3, 4, 5 };
+ * std::array<int, 4> c = { 6, 7, 8, 9 };
+ * std::array<int, 1> d = { 10 };
+ * std::array<int, 1> e = { 11 };
+ *
+ * // Runs: ({1, 2}, {6, 7}), ({3, 4}, {8, 9}), ({5}, {10}), ({}, {11})
+ * mem::for_each_run(mem::scatter_span<int>{ a, b },
+ *                   mem::scatter_span<int>{ c, d, e },
+ *                   [](std::span<int> p_first, std::span<int> p_second) {
+ *                     // ...
+ *                   });
+ * @endcode
+ *
+ * @tparam T - element type of the first scatter span
+ * @tparam U - element type of the second scatter span
+ * @tparam Function - callable as @c void(std::span<T>, std::span<U>)
+ * @param p_first - the first scatter span
+ * @param p_second - the second scatter span
+ * @param p_function - called once per run, with the first scatter span's
+ * part of the run, then the second's
+ */
+export template<typename T, typename U, typename Function>
+  requires std::invocable<Function&, std::span<T>, std::span<U>>
+constexpr void for_each_run(scatter_span<T> p_first,
+                            scatter_span<U> p_second,
+                            Function&& p_function)
+{
+  auto first_chunks = p_first.begin();
+  auto const first_end = p_first.end();
+  auto second_chunks = p_second.begin();
+  auto const second_end = p_second.end();
+  std::span<T> first_chunk{};
+  std::span<U> second_chunk{};
+
+  while (true) {
+    while (first_chunk.empty() && first_chunks != first_end) {
+      first_chunk = *first_chunks++;
+    }
+    while (second_chunk.empty() && second_chunks != second_end) {
+      second_chunk = *second_chunks++;
+    }
+    if (first_chunk.empty() && second_chunk.empty()) {
+      return;
+    }
+
+    auto run = std::max(first_chunk.size(), second_chunk.size());
+    if (not first_chunk.empty() && not second_chunk.empty()) {
+      run = std::min(first_chunk.size(), second_chunk.size());
+    }
+    auto const first_run = first_chunk.first(std::min(run, first_chunk.size()));
+    auto const second_run =
+      second_chunk.first(std::min(run, second_chunk.size()));
+    p_function(first_run, second_run);
+    first_chunk = first_chunk.subspan(first_run.size());
+    second_chunk = second_chunk.subspan(second_run.size());
+  }
+}
 }  // namespace mem
