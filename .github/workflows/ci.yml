@@ -17,9 +17,29 @@ name: ✅ CI
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - "modules/**"
+      - "tests/**"
+      - "test_package/**"
+      - "CMakeLists.txt"
+      - "conanfile.py"
+      - ".clang-format"
+      - ".clang-tidy"
+      - ".pre-commit-config.yaml"
+      - ".github/workflows/ci.yml"
   push:
     branches:
       - main
+    paths:
+      - "modules/**"
+      - "tests/**"
+      - "test_package/**"
+      - "CMakeLists.txt"
+      - "conanfile.py"
+      - ".clang-format"
+      - ".clang-tidy"
+      - ".pre-commit-config.yaml"
+      - ".github/workflows/ci.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
