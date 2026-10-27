@@ -173,14 +173,114 @@ void basic_scatter_span_tests()
     expect(that % subssp == expected);
   };
 
-  // "sub_scatter_span() single element span that exceeds its bounds"_test = [&]
-  // {
-  //   scatter_array ssa = { third };
-  //   // Pick the middle two elements of the third array
-  //   auto subssp = ssa.sub_scatter_span({ .offset = 1, .count = 10 });
-  //   scatter_array<int, 1> const expected({ std::span(third).subspan(1, 3) });
-  //   expect(that % subssp == expected);
-  // };
+  "sub_scatter_span() of a trimmed single chunk view"_test = [&] {
+    // Setup
+    std::array<int, 6> data = { 1, 2, 3, 4, 5, 6 };
+    scatter_array ssa = { data };
+    auto trimmed = ssa.sub_scatter_span({ .offset = 2 });
+
+    // Exercise
+    auto sub = trimmed.sub_scatter_span({ .offset = 1 });
+
+    // Verify
+    expect(that % sub == scatter_span<int>{ std::span(data).subspan(3) });
+  };
+
+  "sub_scatter_span() of a view trimmed into its first chunk"_test = [&] {
+    // Setup
+    scatter_array ssa = { first, second, third };
+    auto trimmed = ssa.sub_scatter_span({ .offset = 1 });
+
+    // Exercise
+    auto sub = trimmed.sub_scatter_span({ .offset = 1, .count = 3 });
+
+    // Verify
+    expect(that % sub ==
+           scatter_span<int>{ std::span(expected).subspan(2, 3) });
+  };
+
+  "sub_scatter_span() of a view trimmed at its last chunk"_test = [&] {
+    // Setup
+    scatter_array ssa = { first, second, third };
+    auto trimmed = ssa.sub_scatter_span({ .count = 7 });
+
+    // Exercise
+    auto sub = trimmed.sub_scatter_span({ .offset = 4 });
+
+    // Verify
+    expect(that % sub ==
+           scatter_span<int>{ std::span(expected).subspan(4, 3) });
+  };
+
+  "sub_scatter_span() of every sub-view matches a flat span"_test = [&] {
+    // Setup
+    // Each layout splits the same elements into chunks differently, including
+    // a single chunk and an empty chunk in the middle.
+    std::array<int, 9> flat = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    std::span<int> const all(flat);
+    std::array<std::span<int>, 1> one_chunk = { all };
+    std::array<std::span<int>, 3> three_chunks = { all.first(3),
+                                                   all.subspan(3, 2),
+                                                   all.subspan(5) };
+    std::array<std::span<int>, 4> with_empty = {
+      all.first(4), all.subspan(4, 0), all.subspan(4, 1), all.subspan(5)
+    };
+    std::array<std::span<int>, 9> one_each{};
+    for (size_t i = 0; i < flat.size(); i++) {
+      one_each[i] = all.subspan(i, 1);
+    }
+    std::array<std::span<std::span<int> const>, 4> const layouts = {
+      one_chunk, three_chunks, with_empty, one_each
+    };
+
+    for (auto const layout : layouts) {
+      scatter_span<int> whole(layout);
+      // Past the end, too, to cover clamping.
+      for (size_t offset = 0; offset <= flat.size() + 1; offset++) {
+        for (size_t count = 0; count <= flat.size() + 1; count++) {
+          // Exercise
+          auto outer =
+            whole.sub_scatter_span({ .offset = offset, .count = count });
+          auto const outer_flat =
+            all.subspan(std::min(offset, all.size()))
+              .first(
+                std::min(count, all.size() - std::min(offset, all.size())));
+
+          // Verify
+          expect(that % outer == scatter_span<int>{ outer_flat })
+            << "layout chunks:" << layout.size() << "offset:" << offset
+            << "count:" << count;
+
+          for (size_t inner_offset = 0; inner_offset <= outer_flat.size() + 1;
+               inner_offset++) {
+            for (size_t inner_count = 0; inner_count <= outer_flat.size() + 1;
+                 inner_count++) {
+              // Exercise
+              auto inner = outer.sub_scatter_span(
+                { .offset = inner_offset, .count = inner_count });
+              auto const start = std::min(inner_offset, outer_flat.size());
+              auto const inner_flat = outer_flat.subspan(start).first(
+                std::min(inner_count, outer_flat.size() - start));
+
+              // Verify
+              expect(that % inner == scatter_span<int>{ inner_flat })
+                << "layout chunks:" << layout.size() << "offset:" << offset
+                << "count:" << count << "inner offset:" << inner_offset
+                << "inner count:" << inner_count;
+            }
+          }
+        }
+      }
+    }
+  };
+
+  "sub_scatter_span() single element span that exceeds its bounds"_test = [&] {
+    scatter_array ssa = { third };
+    // Pick the last three elements of the third array
+    auto subssp = ssa.sub_scatter_span({ .offset = 1, .count = 10 });
+    scatter_array<int, 1> const expected({ std::span(third).subspan(1, 3) });
+    expect(that % subssp == expected);
+  };
 
   "range for scatter_array"_test = [&] {
     scatter_array<int, 3> s_array(first, second, third);

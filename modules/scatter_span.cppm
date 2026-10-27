@@ -82,18 +82,7 @@ public:
     contract_assert(m_index >= m_scatter_span.m_spans.size());
 #endif
 
-    auto const last_element_index = m_scatter_span->m_spans.size() - 1;
-    auto selected_span = m_scatter_span->m_spans[m_index];
-    if (m_index == 0) {
-      selected_span = selected_span.subspan(m_scatter_span->m_start_pos);
-    }
-    if (m_index == last_element_index) {
-      // NOTE: This may seem invalid, but bare in mind that the invariant of
-      // `sub_scatter_span` and other APIs is to ensures that the m_final_len is
-      // always valid, even in the case of a scatter span with a single element.
-      selected_span = selected_span.first(m_scatter_span->m_final_len);
-    }
-    return selected_span;
+    return m_scatter_span->trimmed_chunk(m_index);
   }
 
   /**
@@ -443,80 +432,48 @@ public:
    */
   constexpr scatter_span<T> sub_scatter_span(sub_scatter_span_args p_args) &
   {
-    if (m_spans.size() == 1) {
-      auto& the_only_span = m_spans[0];
-
-      if (p_args.offset >= the_only_span.size()) {
-        return {};
-      }
-
-      auto const clamped_length =
-        std::min(p_args.count, the_only_span.size() - p_args.offset);
-
-      return scatter_span<T>(
-        {
-          .start_pos = p_args.offset,
-          .final_len = clamped_length,
-        },
-        m_spans);
-    }
-
     auto const len = length();
-
     if (p_args.offset >= len) {
       return {};
     }
-
-    if (p_args.count >= len - p_args.offset) {
-      p_args.count = len - p_args.offset;
+    auto const count = std::min(p_args.count, len - p_args.offset);
+    if (count == 0) {
+      return {};
     }
 
-    size_t cur_len = 0;
-    size_t starting_span_idx = 0;
-    size_t effective_span_size = 0;
-    bool boundary = false;
-    for (auto s : *this) {
-      effective_span_size = s.size();
-      cur_len += effective_span_size;
-      if (cur_len > p_args.offset) {
-        break;
-      } else if (cur_len == p_args.offset) {
-        starting_span_idx += 1;
-        boundary = true;
-        break;
-      }
+    // The result is the elements from `first_element` to `last_element`, by
+    // their index in this view. Walk the chunks in order, counting the
+    // elements in the chunks before the current one, and stop at the chunk
+    // each end falls in: the first chunk that ends after it. An empty chunk
+    // ends where it begins, so the walk never stops on one.
+    size_t const first_element = p_args.offset;
+    size_t const last_element = (p_args.offset + count) - 1;
 
-      starting_span_idx += 1;
+    size_t chunk = 0;
+    size_t elements_before = 0;
+    while ((elements_before + trimmed_chunk(chunk).size()) <= first_element) {
+      elements_before += trimmed_chunk(chunk).size();
+      chunk++;
     }
+    size_t const first = chunk;
+    size_t const first_index = first_element - elements_before;
 
-    size_t start_pos = 0;
-    if (!boundary) {
-      start_pos = p_args.offset - (cur_len - effective_span_size);
+    // The last element is at or after the first, so keep walking from here.
+    while ((elements_before + trimmed_chunk(chunk).size()) <= last_element) {
+      elements_before += trimmed_chunk(chunk).size();
+      chunk++;
     }
-    size_t span_idx = 0;
-    cur_len = 0;
-    auto const considered_spans = m_spans.subspan(starting_span_idx);
-    size_t const adjusted_count = p_args.count + start_pos;
-    for (std::span<T const> s : considered_spans) {
-      cur_len += s.size();
-      if (cur_len >= adjusted_count) {
-        break;
-      }
-      span_idx += 1;
-    }
+    size_t const last = chunk;
+    size_t const last_index = last_element - elements_before;
 
-    if (cur_len == adjusted_count) {
-      size_t const final_len =
-        (span_idx == 0) ? p_args.count : considered_spans[span_idx].size();
-      return scatter_span<T>({ .start_pos = start_pos, .final_len = final_len },
-                             considered_spans.subspan(0, span_idx + 1));
-    }
-
-    auto const final_offset =
-      adjusted_count - (cur_len - considered_spans[span_idx].size());
-    return scatter_span<T>(
-      { .start_pos = start_pos, .final_len = final_offset },
-      considered_spans.subspan(0, span_idx + 1));
+    // Positions in this view's first chunk are shifted by its start.
+    size_t const raw_start =
+      (first == 0) ? (first_index + m_start_pos) : first_index;
+    // A single-chunk result's final length counts from its start, as the
+    // iterator applies it after the start.
+    size_t const final_len = (first == last) ? count : (last_index + 1);
+    return scatter_span<T>({ .start_pos = raw_start, .final_len = final_len },
+                           m_spans.subspan(first, (last - first) + 1));
   }
 
   /**
@@ -604,6 +561,22 @@ protected:
   std::span<std::span<T> const> m_spans{};
   size_t m_start_pos = 0;
   size_t m_final_len = 0;
+
+private:
+  /// The chunk at `p_index` as the iterator presents it, trimmed by this
+  /// view's start and final length. In a single-chunk view, the final length
+  /// counts from the start, since it is applied after it.
+  [[nodiscard]] constexpr std::span<T> trimmed_chunk(size_t p_index) const
+  {
+    auto chunk = m_spans[p_index];
+    if (p_index == 0) {
+      chunk = chunk.subspan(m_start_pos);
+    }
+    if (p_index == (m_spans.size() - 1)) {
+      chunk = chunk.first(m_final_len);
+    }
+    return chunk;
+  }
 };
 
 /**
@@ -658,9 +631,9 @@ public:
    */
   template<spanable... Spans>
   constexpr scatter_array(Spans&&... p_spans)
-    : detail::scatter_array_storage<T,
-                                    N>{ .m_internal_arr = { std::span<T>(
-                                          p_spans)... }, }
+    : detail::scatter_array_storage<T, N>{
+      .m_internal_arr = { std::span<T>(p_spans)... },
+    }
     , scatter_span<T>(std::span<std::span<T> const>(this->m_internal_arr))
   {
   }
