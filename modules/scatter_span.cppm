@@ -298,13 +298,14 @@ public:
    *
    * @details Used by @c scatter_array to hand its internal storage to the base
    * class. Assumes full extents of the first and last chunks with no trimming.
+   * An empty span-of-spans produces a zero-length scatter_span.
    *
    * @param p_spans View over the array of chunk spans.
    */
   constexpr scatter_span(std::span<std::span<T> const> p_spans
                          [[MEM_LIFETIMEBOUND]])
     : m_spans(p_spans)
-    , m_final_len(p_spans.back().size())
+    , m_final_len(p_spans.empty() ? 0 : p_spans.back().size())
   {
   }
 
@@ -314,13 +315,13 @@ public:
    * @details The first and last spans are recorded for trim purposes. An empty
    * initializer list produces a zero-length scatter_span.
    *
-   * @param p_il Initializer list of @c std::span<T const> chunks, in logical
-   *             order.
+   * @param p_spans Initializer list of @c std::span<T> chunks, in logical
+   *                order.
    */
   constexpr scatter_span(std::initializer_list<std::span<T>> p_spans
                          [[MEM_LIFETIMEBOUND]])
-    : m_spans(p_spans.begin(), p_spans.end())
-    , m_final_len((p_spans.end() - 1)->size())
+    : scatter_span(
+        std::span<std::span<T> const>(p_spans.begin(), p_spans.end()))
   {
   }
 
