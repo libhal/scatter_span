@@ -11,3 +11,13 @@ Defined in namespace `mem`
 
 ```{doxygenclass} mem::scatter_span_iterator
 ```
+
+## scatter_span_chunk_iterator\<T\>
+
+```{doxygenclass} mem::scatter_span_chunk_iterator
+```
+
+## scatter_span_chunks\<T\>
+
+```{doxygenclass} mem::scatter_span_chunks
+```
