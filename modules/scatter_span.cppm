@@ -342,25 +342,38 @@ public:
    * @return @c true if both iterators are at the same position in the same
    * scatter_span.
    */
-  constexpr bool operator==(scatter_span_iterator const& p_other) const =
-    default;
+  constexpr bool operator==(scatter_span_iterator const& p_other) const
+  {
+    // The chunk tells apart the same element reached through two chunks that
+    // view the same memory.
+    return (m_element == p_other.m_element) and (m_chunk == p_other.m_chunk);
+  }
 
 private:
   friend class scatter_span<T>;
 
+  /// Tag for the constructor of the past-the-end iterator
+  struct end_tag
+  {};
+
   /**
-   * @brief Constructs an iterator at the first element of a chunk, or of the
-   * next non-empty chunk after it.
+   * @brief Constructs an iterator at the first element of a scatter_span.
    * @param p_ssp Parent scatter_span providing the chunks and trims.
-   * @param p_initial_chunk Index of the chunk to start in. The number of
-   * chunks makes the past-the-end iterator.
    */
-  constexpr explicit scatter_span_iterator(scatter_span<T> const* p_ssp,
-                                           size_t p_initial_chunk)
+  constexpr explicit scatter_span_iterator(scatter_span<T> const* p_ssp)
     : m_scatter_span(p_ssp)
-    , m_chunk(p_initial_chunk)
   {
     enter_chunk();
+  }
+
+  /**
+   * @brief Constructs the past-the-end iterator of a scatter_span.
+   * @param p_ssp Parent scatter_span providing the chunks and trims.
+   */
+  constexpr scatter_span_iterator(scatter_span<T> const* p_ssp, end_tag)
+    : m_scatter_span(p_ssp)
+    , m_chunk(p_ssp->m_spans.size())
+  {
   }
 
   /// Point at the first element of the current chunk, or of the next
@@ -522,7 +535,7 @@ public:
    */
   [[nodiscard]] constexpr scatter_span_iterator<T> begin() const&
   {
-    return scatter_span_iterator<T>(this, 0);
+    return scatter_span_iterator<T>(this);
   }
 
   /**
@@ -555,7 +568,8 @@ public:
    */
   [[nodiscard]] constexpr scatter_span_iterator<T> end() const&
   {
-    return scatter_span_iterator<T>(this, m_spans.size());
+    return scatter_span_iterator<T>(
+      this, typename scatter_span_iterator<T>::end_tag{});
   }
 
   /**
