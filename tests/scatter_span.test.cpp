@@ -89,6 +89,24 @@ void basic_scatter_span_tests()
     expect(that % empty_scatter_span.length() == 0);
   };
 
+  "an empty list of chunks makes an empty scatter_span"_test = [&] {
+    // Setup
+    std::span<std::span<int> const> const no_chunks{};
+
+    // Exercise
+    scatter_span<int> const from_span(no_chunks);
+    scatter_array<int, 0> const from_nothing{};
+    auto const from_list_length =
+      scatter_span<int>(std::initializer_list<std::span<int>>{}).length();
+
+    // Verify
+    expect(that % 0 == from_span.length());
+    expect(that % 0 == from_nothing.length());
+    expect(that % 0 == from_list_length);
+    expect(from_span.begin() == from_span.end());
+    expect(from_nothing.begin() == from_nothing.end());
+  };
+
   "constructor & length"_test = [&] {
     scatter_array<int, 3> ssp(first, second, third);
     expect(that % ssp.length() == 9);
