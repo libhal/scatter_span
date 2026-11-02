@@ -19,7 +19,9 @@ module;
 #include <concepts>
 #include <cstddef>
 #include <initializer_list>
+#include <iterator>
 #include <span>
+#include <type_traits>
 
 #if defined(__has_cpp_attribute)
 #if __has_cpp_attribute(clang::lifetimebound)
@@ -53,41 +55,52 @@ export template<typename T>
 class scatter_span;
 
 /**
- * @brief Forward iterator over the constituent spans of a scatter_span.
+ * @brief Forward iterator over the spans (chunks) of a scatter_span.
  *
- * @details Each dereference yields a @c std::span<T const> representing one
- * contiguous segment.
- *
- * The current pointer element is cached allowing for reads via the @c operator*
- * and @c operator-> to be constant time.
+ * @details Each dereference yields a @c std::span<T> for one contiguous chunk,
+ * trimmed to the scatter_span's view. Get one from
+ * @c scatter_span::span_begin() and @c scatter_span::span_end(), or loop over
+ * @c scatter_span::spans().
  *
  * @tparam T Element type of the underlying spans.
  */
 export template<typename T>
-class scatter_span_iterator
+class scatter_span_chunk_iterator
 {
 public:
   using iterator_category = std::forward_iterator_tag;
   using value_type = std::span<T>;
   using difference_type = std::ptrdiff_t;
   using pointer = value_type*;
-  using reference = value_type&;
+  using reference = value_type;
 
+  /**
+   * @brief Constructs an iterator that refers to no span.
+   *
+   * @details Only useful as a placeholder to assign a real iterator to later.
+   * It may be compared with other default-constructed iterators.
+   */
+  constexpr scatter_span_chunk_iterator() = default;
+
+  /**
+   * @brief Returns the span at the current position.
+   * @return The span, trimmed to the scatter_span's view.
+   */
   constexpr value_type get() const
   {
     // NOTE: the code doesn't check of m_index @ size or beyond since its UB to
     // dereference an iterator represented by `end()` and beyond. If contracts
     // are available, then a contract assert checks for this.
 #if defined(__cpp_contracts)
-    contract_assert(m_index >= m_scatter_span.m_spans.size());
+    contract_assert(m_index < m_scatter_span->m_spans.size());
 #endif
 
     return m_scatter_span->trimmed_chunk(m_index);
   }
 
   /**
-   * @brief Returns the trimmed span view for the current position.
-   * @return A const reference to the cached @c std::span<T const>.
+   * @brief Returns the span at the current position.
+   * @return The span, trimmed to the scatter_span's view.
    */
   constexpr value_type operator*() const
   {
@@ -124,9 +137,191 @@ public:
    * @brief Prefix increment. Advances to the next span and updates the cache.
    * @return Reference to @c *this after advancing.
    */
-  constexpr scatter_span_iterator& operator++()
+  constexpr scatter_span_chunk_iterator& operator++()
   {
     ++m_index;
+    return *this;
+  }
+
+  /**
+   * @brief Postfix increment. Returns a copy of the iterator before advancing.
+   * @return Copy of @c *this prior to the increment.
+   */
+  constexpr scatter_span_chunk_iterator operator++(int)
+  {
+    auto tmp = *this;
+    ++(*this);
+    return tmp;
+  }
+
+  /**
+   * @brief Prefix decrement. Retreats to the previous span and updates the
+   * cache.
+   * @return Reference to @c *this after retreating.
+   */
+  constexpr scatter_span_chunk_iterator& operator--()
+  {
+    --m_index;
+    return *this;
+  }
+
+  /**
+   * @brief Postfix decrement. Returns a copy of the iterator before retreating.
+   * @return Copy of @c *this prior to the decrement.
+   */
+  constexpr scatter_span_chunk_iterator operator--(int)
+  {
+    auto tmp = *this;
+    --(*this);
+    return tmp;
+  }
+
+  /**
+   * @brief Returns a new iterator advanced by @p p_delta spans.
+   * @param p_delta Number of spans to advance.
+   * @return New iterator pointing @p p_delta spans ahead.
+   */
+  constexpr scatter_span_chunk_iterator operator+(difference_type p_delta) const
+  {
+    auto tmp = *this;
+    tmp.m_index += p_delta;
+    return tmp;
+  }
+
+  /**
+   * @brief Returns a new iterator retreated by @p p_delta spans.
+   * @param p_delta Number of spans to retreat.
+   * @return New iterator pointing @p p_delta spans behind.
+   */
+  constexpr scatter_span_chunk_iterator operator-(difference_type p_delta) const
+  {
+    auto tmp = *this;
+    tmp.m_index -= p_delta;
+    return tmp;
+  }
+
+  /**
+   * @brief Returns the signed span distance between two iterators.
+   * @param p_other The iterator to subtract.
+   * @return Number of spans from @p p_other to @c *this.
+   */
+  constexpr difference_type operator-(
+    scatter_span_chunk_iterator const& p_other) const
+  {
+    return m_index - p_other.m_index;
+  }
+
+  /**
+   * @brief Commutative addition: advances @p it by @p n spans.
+   * @param n   Number of spans to advance.
+   * @param it  Iterator to advance.
+   * @return New iterator pointing @p n spans ahead of @p it.
+   */
+  friend constexpr scatter_span_chunk_iterator operator+(
+    difference_type p_delta,
+    scatter_span_chunk_iterator const& p_iterator)
+  {
+    return p_iterator + p_delta;
+  }
+
+  /**
+   * @brief Equality comparison by underlying pointer.
+   * @param p_other Iterator to compare against.
+   * @return @c true if both iterators point to the same span.
+   */
+  constexpr bool operator==(scatter_span_chunk_iterator const& p_other) const
+  {
+    return (m_scatter_span == p_other.m_scatter_span) and
+           (m_index == p_other.m_index);
+  }
+
+  /**
+   * @brief Inequality comparison by underlying pointer.
+   * @param p_other Iterator to compare against.
+   * @return @c true if the iterators point to different spans.
+   */
+  constexpr bool operator!=(scatter_span_chunk_iterator const& p_other) const
+  {
+    return not(*this == p_other);
+  };
+
+private:
+  friend class scatter_span<T>;
+  /**
+   * @brief Constructs an iterator for @p p_ssp pointing at @p p_ptr.
+   * @param p_ssp Parent scatter_span providing trim metadata.
+   * @param p_ptr Pointer into @p p_ssp's internal span array.
+   * @note The cache is primed immediately on construction.
+   */
+  constexpr explicit scatter_span_chunk_iterator(scatter_span<T> const* p_ssp,
+                                                 size_t p_initial_index)
+    : m_scatter_span(p_ssp)
+    , m_index(p_initial_index)
+  {
+  }
+
+  scatter_span<T> const* m_scatter_span = nullptr;
+  size_t m_index = 0;
+};
+
+/**
+ * @brief Forward iterator over the elements of a scatter_span, in order.
+ *
+ * @details Each dereference yields a reference to one element. Stepping within
+ * a chunk moves a pointer. Stepping off the end of a chunk moves to the first
+ * element of the next non-empty chunk, so empty chunks are skipped. Get one
+ * from @c scatter_span::begin() and @c scatter_span::end().
+ *
+ * @tparam T Element type of the underlying spans.
+ */
+export template<typename T>
+class scatter_span_iterator
+{
+public:
+  using iterator_concept = std::forward_iterator_tag;
+  using iterator_category = std::forward_iterator_tag;
+  using value_type = std::remove_cv_t<T>;
+  using difference_type = std::ptrdiff_t;
+  using pointer = T*;
+  using reference = T&;
+
+  /**
+   * @brief Constructs an iterator that refers to no element.
+   *
+   * @details Only useful as a placeholder to assign a real iterator to later.
+   * It may be compared with other default-constructed iterators.
+   */
+  constexpr scatter_span_iterator() = default;
+
+  /**
+   * @brief Returns the element at the current position.
+   * @return A reference to the element.
+   */
+  constexpr T& operator*() const
+  {
+    return *m_element;
+  }
+
+  /**
+   * @brief Returns the address of the element at the current position.
+   * @return A pointer to the element.
+   */
+  constexpr T* operator->() const
+  {
+    return m_element;
+  }
+
+  /**
+   * @brief Prefix increment. Advances to the next element.
+   * @return Reference to @c *this after advancing.
+   */
+  constexpr scatter_span_iterator& operator++()
+  {
+    ++m_element;
+    if (m_element == m_chunk_end) {
+      m_chunk++;
+      enter_chunk();
+    }
     return *this;
   }
 
@@ -142,113 +337,109 @@ public:
   }
 
   /**
-   * @brief Prefix decrement. Retreats to the previous span and updates the
-   * cache.
-   * @return Reference to @c *this after retreating.
-   */
-  constexpr scatter_span_iterator& operator--()
-  {
-    --m_index;
-    return *this;
-  }
-
-  /**
-   * @brief Postfix decrement. Returns a copy of the iterator before retreating.
-   * @return Copy of @c *this prior to the decrement.
-   */
-  constexpr scatter_span_iterator operator--(int)
-  {
-    auto tmp = *this;
-    --(*this);
-    return tmp;
-  }
-
-  /**
-   * @brief Returns a new iterator advanced by @p p_delta spans.
-   * @param p_delta Number of spans to advance.
-   * @return New iterator pointing @p p_delta spans ahead.
-   */
-  constexpr scatter_span_iterator operator+(difference_type p_delta) const
-  {
-    auto tmp = *this;
-    tmp.m_index += p_delta;
-    return tmp;
-  }
-
-  /**
-   * @brief Returns a new iterator retreated by @p p_delta spans.
-   * @param p_delta Number of spans to retreat.
-   * @return New iterator pointing @p p_delta spans behind.
-   */
-  constexpr scatter_span_iterator operator-(difference_type p_delta) const
-  {
-    auto tmp = *this;
-    tmp.m_index -= p_delta;
-    return tmp;
-  }
-
-  /**
-   * @brief Returns the signed span distance between two iterators.
-   * @param p_other The iterator to subtract.
-   * @return Number of spans from @p p_other to @c *this.
-   */
-  constexpr difference_type operator-(
-    scatter_span_iterator const& p_other) const
-  {
-    return m_index - p_other.m_index;
-  }
-
-  /**
-   * @brief Commutative addition: advances @p it by @p n spans.
-   * @param n   Number of spans to advance.
-   * @param it  Iterator to advance.
-   * @return New iterator pointing @p n spans ahead of @p it.
-   */
-  friend constexpr scatter_span_iterator operator+(
-    difference_type p_delta,
-    scatter_span_iterator const& p_iterator)
-  {
-    return p_iterator + p_delta;
-  }
-
-  /**
-   * @brief Equality comparison by underlying pointer.
+   * @brief Equality comparison.
    * @param p_other Iterator to compare against.
-   * @return @c true if both iterators point to the same span.
+   * @return @c true if both iterators are at the same position in the same
+   * scatter_span.
    */
   constexpr bool operator==(scatter_span_iterator const& p_other) const
   {
-    return (m_scatter_span == p_other.m_scatter_span) and
-           (m_index == p_other.m_index);
+    // The chunk tells apart the same element reached through two chunks that
+    // view the same memory.
+    return (m_element == p_other.m_element) and (m_chunk == p_other.m_chunk);
   }
-
-  /**
-   * @brief Inequality comparison by underlying pointer.
-   * @param p_other Iterator to compare against.
-   * @return @c true if the iterators point to different spans.
-   */
-  constexpr bool operator!=(scatter_span_iterator const& p_other) const
-  {
-    return not(*this == p_other);
-  };
 
 private:
   friend class scatter_span<T>;
+
+  /// Tag for the constructor of the past-the-end iterator
+  struct end_tag
+  {};
+
   /**
-   * @brief Constructs an iterator for @p p_ssp pointing at @p p_ptr.
-   * @param p_ssp Parent scatter_span providing trim metadata.
-   * @param p_ptr Pointer into @p p_ssp's internal span array.
-   * @note The cache is primed immediately on construction.
+   * @brief Constructs an iterator at the first element of a scatter_span.
+   * @param p_ssp Parent scatter_span providing the chunks and trims.
    */
-  constexpr explicit scatter_span_iterator(scatter_span<T> const* p_ssp,
-                                           size_t p_initial_index)
+  constexpr explicit scatter_span_iterator(scatter_span<T> const* p_ssp)
     : m_scatter_span(p_ssp)
-    , m_index(p_initial_index)
+  {
+    enter_chunk();
+  }
+
+  /**
+   * @brief Constructs the past-the-end iterator of a scatter_span.
+   * @param p_ssp Parent scatter_span providing the chunks and trims.
+   */
+  constexpr scatter_span_iterator(scatter_span<T> const* p_ssp, end_tag)
+    : m_scatter_span(p_ssp)
+    , m_chunk(p_ssp->m_spans.size())
+  {
+  }
+
+  /// Point at the first element of the current chunk, or of the next
+  /// non-empty chunk after it. Past the last chunk, become the past-the-end
+  /// iterator.
+  constexpr void enter_chunk()
+  {
+    auto const chunk_count = m_scatter_span->m_spans.size();
+    for (; m_chunk < chunk_count; m_chunk++) {
+      auto const chunk = m_scatter_span->trimmed_chunk(m_chunk);
+      if (not chunk.empty()) {
+        m_element = chunk.data();
+        m_chunk_end = chunk.data() + chunk.size();
+        return;
+      }
+    }
+    m_element = nullptr;
+    m_chunk_end = nullptr;
+  }
+
+  scatter_span<T> const* m_scatter_span = nullptr;
+  size_t m_chunk = 0;
+  T* m_element = nullptr;
+  T* m_chunk_end = nullptr;
+};
+
+/**
+ * @brief The spans (chunks) of a scatter_span, as a range.
+ *
+ * @details Returned by @c scatter_span::spans(), for range-based for loops and
+ * range algorithms that work on whole spans. It refers to the scatter_span, so
+ * the scatter_span must outlive it.
+ *
+ * @tparam T Element type of the underlying spans.
+ */
+export template<typename T>
+class scatter_span_chunks
+{
+public:
+  /**
+   * @brief Returns an iterator to the first span.
+   * @return The scatter_span's @c span_begin().
+   */
+  [[nodiscard]] constexpr scatter_span_chunk_iterator<T> begin() const
+  {
+    return m_scatter_span->span_begin();
+  }
+
+  /**
+   * @brief Returns a past-the-end iterator.
+   * @return The scatter_span's @c span_end().
+   */
+  [[nodiscard]] constexpr scatter_span_chunk_iterator<T> end() const
+  {
+    return m_scatter_span->span_end();
+  }
+
+private:
+  friend class scatter_span<T>;
+
+  constexpr explicit scatter_span_chunks(scatter_span<T> const* p_ssp)
+    : m_scatter_span(p_ssp)
   {
   }
 
   scatter_span<T> const* m_scatter_span = nullptr;
-  size_t m_index = 0;
 };
 
 /**
@@ -267,7 +458,10 @@ concept spanable = requires(T& t) {
  *
  * @details Works similarly to @c std::span, but the viewed elements do not
  * need to be contiguous in memory. Each constituent chunk is a separate
- * @c std::span<T const>. Iterating yields each chunk a span in order.
+ * @c std::span<T>. Iterating, with @c begin() and @c end() or a range-based
+ * for loop, yields each element in order. To work on whole chunks instead,
+ * which is faster for copies and transfers, use @c spans(), or
+ * @c span_begin() and @c span_end().
  *
  * Prefer @c scatter_span for ad-hoc, call-site construction. Commonly used for
  * when forwarding discontiguous buffers to an API without a heap allocation or
@@ -331,12 +525,17 @@ public:
   constexpr scatter_span() = default;
 
   /**
-   * @brief Returns an iterator to the first span chunk.
-   * @return @c scatter_span_iterator<T> pointing at the first chunk.
+   * @brief Returns an iterator to the first element.
+   *
+   * @details Iterating from @c begin() to @c end() visits every element of
+   * every chunk, in order, skipping empty chunks. A range-based for loop over
+   * a scatter_span does the same. To visit whole chunks, use @c spans().
+   *
+   * @return @c scatter_span_iterator<T> pointing at the first element.
    */
   [[nodiscard]] constexpr scatter_span_iterator<T> begin() const&
   {
-    return scatter_span_iterator<T>(this, 0);
+    return scatter_span_iterator<T>(this);
   }
 
   /**
@@ -365,11 +564,12 @@ public:
 
   /**
    * @brief Returns a past-the-end iterator.
-   * @return @c scatter_span_iterator<T> pointing one past the last chunk.
+   * @return @c scatter_span_iterator<T> pointing one past the last element.
    */
   [[nodiscard]] constexpr scatter_span_iterator<T> end() const&
   {
-    return scatter_span_iterator<T>(this, m_spans.size());
+    return scatter_span_iterator<T>(
+      this, typename scatter_span_iterator<T>::end_tag{});
   }
 
   /**
@@ -394,6 +594,69 @@ public:
    * @endcode
    */
   constexpr scatter_span_iterator<T> end() const&& = delete;
+
+  /**
+   * @brief Returns an iterator to the first chunk.
+   * @return @c scatter_span_chunk_iterator<T> pointing at the first chunk,
+   * trimmed to this view.
+   */
+  [[nodiscard]] constexpr scatter_span_chunk_iterator<T> span_begin() const&
+  {
+    return scatter_span_chunk_iterator<T>(this, 0);
+  }
+
+  /**
+   * @brief Deleted overload preventing chunk iteration over a temporary
+   * @c scatter_array, for the same reason as @c begin() const&&.
+   */
+  constexpr scatter_span_chunk_iterator<T> span_begin() const&& = delete;
+
+  /**
+   * @brief Returns a past-the-end chunk iterator.
+   * @return @c scatter_span_chunk_iterator<T> pointing one past the last chunk.
+   */
+  [[nodiscard]] constexpr scatter_span_chunk_iterator<T> span_end() const&
+  {
+    return scatter_span_chunk_iterator<T>(this, m_spans.size());
+  }
+
+  /**
+   * @brief Deleted overload preventing chunk iteration over a temporary
+   * @c scatter_array, for the same reason as @c begin() const&&.
+   */
+  constexpr scatter_span_chunk_iterator<T> span_end() const&& = delete;
+
+  /**
+   * @brief Returns the chunks of this scatter_span as a range.
+   *
+   * @details Each chunk is a @c std::span<T>, trimmed to this view. Empty
+   * chunks are included. Working a chunk at a time is faster than an element
+   * at a time for copies and transfers.
+   *
+   * @par Example
+   * @code
+   * std::array<int, 3> a = { 1, 2, 3 };
+   * std::array<int, 2> b = { 4, 5 };
+   * mem::scatter_array<int, 2> ssa(a, b);
+   *
+   * for (std::span<int> chunk : ssa.spans()) {
+   *   // { 1, 2, 3 }, then { 4, 5 }
+   * }
+   * @endcode
+   *
+   * @return A range from @c span_begin() to @c span_end(). It refers to this
+   * scatter_span, which must outlive it.
+   */
+  [[nodiscard]] constexpr scatter_span_chunks<T> spans() const&
+  {
+    return scatter_span_chunks<T>(this);
+  }
+
+  /**
+   * @brief Deleted overload preventing chunk iteration over a temporary
+   * @c scatter_array, for the same reason as @c begin() const&&.
+   */
+  constexpr scatter_span_chunks<T> spans() const&& = delete;
 
   /**
    * @brief Arguments for @c sub_scatter_span().
@@ -528,6 +791,7 @@ public:
     return res + m_final_len;
   }
 
+  friend class scatter_span_chunk_iterator<T>;
   friend class scatter_span_iterator<T>;
 
 protected:
@@ -699,10 +963,10 @@ constexpr void for_each_run(scatter_span<T> p_first,
                             scatter_span<U> p_second,
                             Function&& p_function)
 {
-  auto first_chunks = p_first.begin();
-  auto const first_end = p_first.end();
-  auto second_chunks = p_second.begin();
-  auto const second_end = p_second.end();
+  auto first_chunks = p_first.span_begin();
+  auto const first_end = p_first.span_end();
+  auto second_chunks = p_second.span_begin();
+  auto const second_end = p_second.span_end();
   std::span<T> first_chunk{};
   std::span<U> second_chunk{};
 

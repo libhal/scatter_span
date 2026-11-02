@@ -20,6 +20,7 @@
 #include <functional>
 #include <ostream>
 #include <print>
+#include <ranges>
 #include <span>
 #include <utility>
 #include <vector>
@@ -37,22 +38,16 @@ template<typename T>
 std::ostream& operator<<(std::ostream& p_os, scatter_span<T> const& p_ssp)
 {
   p_os << "[ ";
-  for (auto chunk : p_ssp) {
-    p_os << "[ ";
-    for (size_t i = 0; i < chunk.size(); i++) {
-      p_os << chunk[i];
-      if (i != chunk.size() - 1) {
-        p_os << ", ";
-      }
-    }
-    p_os << " ]";
+  for (auto const& element : p_ssp) {
+    p_os << element << " ";
   }
-  p_os << " ]";
+  p_os << "]";
   return p_os;
 }
 
 /* A helper function to compare two scatter_spans. This is only useful for
- * testing
+ * testing. It compares them both an element at a time and a chunk at a time,
+ * so every comparison also checks that the two kinds of iteration agree.
  */
 template<typename T>
 bool operator==(scatter_span<T> const& lhs, scatter_span<T> const& rhs)
@@ -61,22 +56,20 @@ bool operator==(scatter_span<T> const& lhs, scatter_span<T> const& rhs)
     return false;
   }
 
-  if (lhs.length() == 0) {
-    return true;
-  }
-
   std::vector<T> lhs_vec;
   std::vector<T> rhs_vec;
 
-  for (auto s : lhs) {
+  for (auto s : lhs.spans()) {
     lhs_vec.append_range(s);
   }
 
-  for (auto s : rhs) {
+  for (auto s : rhs.spans()) {
     rhs_vec.append_range(s);
   }
 
-  return std::ranges::equal(lhs_vec, rhs_vec);
+  return std::ranges::equal(lhs, rhs) and
+         std::ranges::equal(lhs_vec, rhs_vec) and
+         std::ranges::equal(lhs, lhs_vec);
 }
 }  // namespace mem
 
@@ -109,7 +102,7 @@ void basic_scatter_span_tests()
       scatter_array<int, 1> expected_ssp(expected);
       expect(that % expected_ssp == p_ssp);
 
-      auto ssp_it = p_ssp.begin();
+      auto ssp_it = p_ssp.span_begin();
       expect(that % first.data() == ssp_it->data());
       ssp_it++;
       expect(that % second.data() == ssp_it->data());
@@ -282,36 +275,172 @@ void basic_scatter_span_tests()
     expect(that % subssp == expected);
   };
 
-  "range for scatter_array"_test = [&] {
+  "range for over spans() of a scatter_array"_test = [&] {
     scatter_array<int, 3> s_array(first, second, third);
     std::vector<std::span<int const>> exp_span({ first, second, third });
     size_t i = 0;
-    for (auto el : s_array) {
+    for (auto el : s_array.spans()) {
       expect(that % std::ranges::equal(exp_span[i], el));
       i++;
     }
+    expect(that % 3 == i);
   };
 
-  "range for scatter_span"_test = [&] {
+  "range for over spans() of a scatter_span"_test = [&] {
     scatter_array<int, 3> s_array(first, second, third);
     std::vector<std::span<int const>> exp_span({ first, second, third });
     scatter_span<int> s_span(s_array);
     size_t i = 0;
-    for (auto el : s_span) {
+    for (auto el : s_span.spans()) {
       expect(that % std::ranges::equal(exp_span[i], el));
       i++;
     }
+    expect(that % 3 == i);
   };
 
-  "range for scatter_span (empty)"_test = [&] {
-    std::vector<std::span<int const>> exp_span{};
+  "range for over spans() of an empty scatter_span"_test = [&] {
     scatter_span<int> s_span{};
     size_t i = 0;
-    for (auto el : s_span) {
-      expect(that % std::ranges::equal(exp_span[i], el));
+    for ([[maybe_unused]] auto el : s_span.spans()) {
       i++;
     }
+    expect(that % 0 == i);
   };
+
+  "spans() trims the first and last chunks to the view"_test = [&] {
+    // Setup
+    scatter_array<int, 3> s_array(first, second, third);
+    auto const trimmed = s_array.sub_scatter_span({ .offset = 1, .count = 7 });
+    std::vector<std::vector<int>> chunks;
+
+    // Exercise
+    for (std::span<int> chunk : trimmed.spans()) {
+      chunks.emplace_back(chunk.begin(), chunk.end());
+    }
+
+    // Verify
+    expect(chunks ==
+           std::vector<std::vector<int>>{ { 2, 3 }, { 4, 5 }, { 6, 7, 8 } });
+  };
+
+  "span_begin() and span_end() walk the chunks"_test = [&] {
+    // Setup
+    scatter_array<int, 3> s_array(first, second, third);
+    std::vector<size_t> sizes;
+
+    // Exercise
+    for (auto chunk = s_array.span_begin(); chunk != s_array.span_end();
+         chunk++) {
+      sizes.push_back(chunk->size());
+    }
+
+    // Verify
+    expect(sizes == std::vector<size_t>{ 3, 2, 4 });
+  };
+
+  "range for visits every element of a scatter_array"_test = [&] {
+    // Setup
+    scatter_array<int, 3> s_array(first, second, third);
+    std::vector<int> visited;
+
+    // Exercise
+    for (int const element : s_array) {
+      visited.push_back(element);
+    }
+
+    // Verify
+    expect(std::ranges::equal(expected, visited));
+  };
+
+  "range for visits only the elements of a trimmed view"_test = [&] {
+    // Setup
+    scatter_array<int, 3> s_array(first, second, third);
+    auto const trimmed = s_array.sub_scatter_span({ .offset = 2, .count = 5 });
+    std::vector<int> visited;
+
+    // Exercise
+    for (int const element : trimmed) {
+      visited.push_back(element);
+    }
+
+    // Verify
+    expect(visited == std::vector<int>{ 3, 4, 5, 6, 7 });
+  };
+
+  "range for skips empty chunks"_test = [&] {
+    // Setup
+    std::array<int, 0> none{};
+    scatter_array<int, 5> s_array(none, first, none, none, second);
+    std::vector<int> visited;
+
+    // Exercise
+    for (int const element : s_array) {
+      visited.push_back(element);
+    }
+
+    // Verify
+    expect(visited == std::vector<int>{ 1, 2, 3, 4, 5 });
+  };
+
+  "range for over an empty scatter_span visits nothing"_test = [&] {
+    // Setup
+    std::array<int, 0> none{};
+    scatter_array<int, 2> only_empty_chunks(none, none);
+    scatter_span<int> empty{};
+
+    // Exercise + Verify
+    expect(empty.begin() == empty.end());
+    expect(only_empty_chunks.begin() == only_empty_chunks.end());
+  };
+
+  "elements can be written through the iterator"_test = [&] {
+    // Setup
+    std::array<int, 2> a = { 0, 0 };
+    std::array<int, 3> b = { 0, 0, 0 };
+    scatter_array<int, 2> s_array(a, b);
+    int next = 10;
+
+    // Exercise
+    for (int& element : s_array) {
+      element = next++;
+    }
+
+    // Verify
+    expect(a == std::array{ 10, 11 });
+    expect(b == std::array{ 12, 13, 14 });
+  };
+
+  "the same buffer twice is visited twice, in order"_test = [&] {
+    // Setup
+    scatter_array<int, 2> twice(second, second);
+
+    // Exercise
+    std::vector<int> visited(twice.begin(), twice.end());
+
+    // Verify
+    expect(visited == std::vector<int>{ 4, 5, 4, 5 });
+    expect(std::ranges::distance(twice) == 4);
+  };
+
+  "scatter_span is a forward range of elements and spans() of spans"_test =
+    [&] {
+      // Exercise + Verify
+      static_assert(std::ranges::forward_range<scatter_span<int>>);
+      static_assert(std::ranges::forward_range<scatter_span<int const>>);
+      static_assert(
+        std::same_as<std::ranges::range_reference_t<scatter_span<int>>, int&>);
+      static_assert(
+        std::same_as<std::ranges::range_reference_t<scatter_span<int const>>,
+                     int const&>);
+      static_assert(std::ranges::forward_range<scatter_span_chunks<int>>);
+      static_assert(
+        std::same_as<std::ranges::range_reference_t<scatter_span_chunks<int>>,
+                     std::span<int>>);
+      // The elements of the spans, flattened by the standard library, are the
+      // same as the scatter_span's own elements.
+      scatter_array<int, 3> s_array(first, second, third);
+      expect(std::ranges::equal(s_array.spans() | std::views::join, s_array));
+    };
   "for_each_run() splits at whichever chunk boundary comes first"_test = [&] {
     // Setup
     std::array<int, 2> a = { 1, 2 };
