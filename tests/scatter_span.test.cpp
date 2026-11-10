@@ -107,6 +107,57 @@ void basic_scatter_span_tests()
     expect(from_nothing.begin() == from_nothing.end());
   };
 
+  "empty() is true when no chunk has an element"_test = [&] {
+    // Setup
+    std::array<int, 0> none{};
+    std::span<std::span<int> const> const no_chunks{};
+
+    // Exercise
+    scatter_span<int> const from_nothing{};
+    scatter_span<int> const from_span(no_chunks);
+    scatter_array<int, 1> const one_empty_chunk(none);
+    scatter_array<int, 3> const three_empty_chunks(none, none, none);
+
+    // Verify
+    expect(from_nothing.empty());
+    expect(from_span.empty());
+    expect(one_empty_chunk.empty());
+    expect(three_empty_chunks.empty());
+  };
+
+  "empty() is false when any chunk has an element"_test = [&] {
+    // Setup
+    std::array<int, 0> none{};
+
+    // Exercise
+    scatter_array<int, 3> const first_chunk(first, none, none);
+    scatter_array<int, 3> const middle_chunk(none, second, none);
+    scatter_array<int, 3> const last_chunk(none, none, third);
+    scatter_array<int, 1> const one_chunk(first);
+
+    // Verify
+    expect(not first_chunk.empty());
+    expect(not middle_chunk.empty());
+    expect(not last_chunk.empty());
+    expect(not one_chunk.empty());
+  };
+
+  "empty() agrees with length() for every trimmed view"_test = [&] {
+    // Setup
+    std::array<int, 0> none{};
+    scatter_array ssa = { first, none, second, none, third };
+
+    // Exercise + Verify
+    for (std::size_t offset = 0; offset <= 10; offset++) {
+      for (std::size_t count = 0; count <= 10; count++) {
+        auto const sub =
+          ssa.sub_scatter_span({ .offset = offset, .count = count });
+        expect((sub.length() == 0) == sub.empty())
+          << "offset" << offset << "count" << count;
+      }
+    }
+  };
+
   "constructor & length"_test = [&] {
     scatter_array<int, 3> ssp(first, second, third);
     expect(that % ssp.length() == 9);
