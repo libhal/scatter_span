@@ -792,6 +792,35 @@ public:
     return res + m_final_len;
   }
 
+  /**
+   * @brief Returns whether the view has no elements.
+   *
+   * @details Equivalent to `length() == 0`, but stops at the first chunk with
+   * elements instead of counting every chunk. It takes constant time unless
+   * the view starts with empty chunks, which it walks past.
+   *
+   * @return True if no chunk has an element in the view.
+   */
+  [[nodiscard]] constexpr bool empty() const
+  {
+    if (m_spans.size() <= 1) {
+      return m_final_len == 0;
+    }
+
+    if (m_spans[0].size() > m_start_pos) {
+      return false;
+    }
+
+    auto const second_to_last_element = m_spans.size() - 2;
+    for (auto const& s : m_spans.subspan(1, second_to_last_element)) {
+      if (not s.empty()) {
+        return false;
+      }
+    }
+
+    return m_final_len == 0;
+  }
+
   friend class scatter_span_chunk_iterator<T>;
   friend class scatter_span_iterator<T>;
 
