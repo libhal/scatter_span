@@ -146,10 +146,12 @@ void basic_scatter_span_tests()
     // Setup
     std::array<int, 0> none{};
     scatter_array ssa = { first, none, second, none, third };
+    // One past the end, so offsets and counts beyond the view are checked too
+    auto const past_end = ssa.length() + 1;
 
     // Exercise + Verify
-    for (std::size_t offset = 0; offset <= 10; offset++) {
-      for (std::size_t count = 0; count <= 10; count++) {
+    for (std::size_t offset = 0; offset <= past_end; offset++) {
+      for (std::size_t count = 0; count <= past_end; count++) {
         auto const sub =
           ssa.sub_scatter_span({ .offset = offset, .count = count });
         expect((sub.length() == 0) == sub.empty())
